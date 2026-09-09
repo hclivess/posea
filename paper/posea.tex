@@ -1,0 +1,265 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+
+\newtheorem{observation}{Observation}
+\newtheorem{definition}{Definition}
+
+\title{Proof of Secure Element Attestation:\\
+Sybil Resistance from Hardware Scarcity Rather Than Cost}
+
+\author{%
+  Jan Kucera\\
+  \texttt{nadochain.com}\\
+  \texttt{github.com/hclivess/nado}
+}
+
+\date{September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Permissionless systems that distribute rewards per participant rather than per unit of
+capital face an adversary that ordinary countermeasures cannot price: the identity farm.
+We observe that every per-identity admission rule --- registration work, waiting periods,
+per-address caps, per-subnet budgets, probation --- imposes a cost that is linear in the
+number of identities, and therefore charges an honest participant holding one identity
+exactly what it charges an adversary holding $n$, per identity. The adversary amortises;
+the honest participant does not. We report a deployment in which this failure was total:
+on a live chain, approximately $1{,}000$ of $1{,}191$ registered mining identities belonged
+to two or three operators running browser farms on rented servers, capturing roughly $42\%$
+of block emission.
+
+We describe Proof of Secure Element Attestation (PoSEA), which replaces the attempt to make
+identities \emph{expensive} with an attempt to make them \emph{scarce}. Admission requires a
+WebAuthn hardware attestation: the device generates a non-exportable key inside its secure
+element and signs a chain-selected challenge, producing a certificate chain terminating at a
+vendor attestation root pinned as a consensus constant. Verification is deterministic and
+offline; no validator contacts a vendor. Where the device class exposes a per-device
+certificate, that certificate is bound to a single identity for the duration of a lease.
+Block production is unchanged and remains a deterministic beacon-keyed weighted draw, so the
+mechanism confers no advantage on faster hardware.
+
+We give the deployment results, and we state plainly the two costs: the scheme places vendor
+attestation authorities in the trust path, and it excludes devices whose owners have unlocked
+them. We identify the security of the construction as reducing to an unresolved empirical
+question --- whether the cost of extracting attestation keys from a secure element is
+per-model or generalises across a chip family --- and we invite work on it.
+\end{abstract}
+
+\section{Introduction}
+
+A permissionless network that wishes to reward people rather than capital must decide who
+counts as a person. Proof of Work answers by making participation expensive in energy; Proof
+of Stake answers by making it expensive in capital. Both are auctions, and in an auction the
+participant with the most of the scarce input wins. Concentration follows by construction
+rather than by accident.
+
+Systems that attempt to escape this by paying per participant inherit a different problem.
+If an identity can be minted by a script, the reward per identity becomes a subsidy to
+whoever can mint the most.
+
+This is not a hypothetical failure. NANO's representative spam, Idena's validation
+ceremonies and Nyzo's cycle each encountered it, and each responded with additional
+per-identity rules that the next operator circumvented by the same method as the last. We
+report a further instance, with measurements, and argue that the recurrence is structural.
+
+\subsection{Deployment context}
+
+NADO is a permissionless chain with a two-lane block production schedule. A \emph{bonded}
+lane weights producers by stake. An \emph{open} lane, which receives $30\%$ of slots, was
+designed so that a participant with no capital could produce blocks from an ordinary mobile
+device. Selection in both lanes is a deterministic, beacon-keyed weighted draw: exactly one
+hash determines each slot's producer, so there is no grinding advantage and no hash race.
+
+The open lane was defended, successively, by a non-parallelisable sequential work proof at
+registration, a per-subnet ingress budget, a per-address identity cap, and a probationary
+period before a new identity could earn. Each was deployed in response to observed farming.
+Each failed.
+
+\begin{observation}[Linearity]
+\label{obs:linearity}
+Let $c$ be the cost imposed by an admission rule on a single identity, and let an adversary
+control $n$ identities. The adversary's total cost is $nc$ and its reward is $n r$ for
+per-identity reward $r$; the honest participant's cost is $c$ against reward $r$. The ratio
+of cost to reward is $c/r$ for both. Raising $c$ therefore does not disadvantage the
+adversary relative to the honest participant. It disadvantages every participant equally,
+and prices out the honest participant first, because the adversary amortises fixed setup
+across $n$ while the honest participant does not.
+\end{observation}
+
+Observation~\ref{obs:linearity} is elementary, and we state it explicitly because the
+literature and practice both continue to propose per-identity rules as anti-Sybil measures.
+The rule does not have to be weak to fail. It fails because it is per identity.
+
+\subsection{Measurement}
+
+On 2026-09-06 the open lane carried $1{,}191$ registered identities. Approximately $1{,}000$
+of these were attributable to two or three operators running headless browser farms on
+rented Linux and Windows servers. The farmed set captured approximately $42\%$ of total
+emission. Every honest participant was, in effect, subsidising three people.
+
+\section{Construction}
+
+\subsection{Intuition}
+
+Only two properties resist replication by an adversary with money but no people: capital,
+which the bonded lane already weighs, and a physically distinct object. PoSEA anchors open-lane
+identity in the second.
+
+A secure element is a physically distinct object that can attest to its own genuineness. It
+cannot be instantiated in software, and --- crucially --- it cannot be instantiated in
+software \emph{by an adversary who already controls the host}.
+
+\begin{definition}[PoSEA admission]
+An identity is admitted to the open lane for a lease period if it presents a WebAuthn
+attestation statement in which
+\begin{enumerate}
+  \item a non-exportable key was generated inside a secure element,
+  \item that key signs a challenge derived from a chain-selected beacon value,
+  \item the attestation certificate chain terminates at a vendor root pinned in the protocol,
+  \item the attested boot state indicates a locked bootloader and verified boot, and
+  \item where the device class exposes a per-device certificate, that certificate is not
+        currently bound to another identity.
+\end{enumerate}
+\end{definition}
+
+\subsection{Device classes}
+
+Four classes expose hardware attestation to a web page. They differ in whether they yield a
+per-device handle, which determines whether condition (5) is enforceable.
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Class & Format & Pinned root & Per-device? \\
+\midrule
+Android, locked bootloader & \texttt{android-key} & Google HW attestation roots & Yes (RKP, Android 12+) \\
+Windows, physical TPM 2.0 & \texttt{tpm} & Microsoft TPM Root CA 2014 & Yes (AIK per TPM/account) \\
+FIDO2 security key & \texttt{packed} & per-AAGUID FIDO MDS roots & No (batch, $\geq 10^5$ units) \\
+Apple Secure Enclave & \texttt{apple} & Apple WebAuthn Root CA & No attestation via passkeys \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+On Android with remote key provisioning, the attestation certificate at position
+\texttt{x5c[1]} is unique to the device and reused for every credential it creates until
+rotation (approximately two weeks in the observed sample). On Windows, the AIK certificate is
+unique to the pair (TPM, account). These two classes therefore admit enforcement of condition
+(5), and are the classes the deployment accepts.
+
+FIDO2 authenticators issue one batch certificate per $\geq 10^5$ units by design, as a privacy
+measure; they identify a model, not a unit, and are refused. Apple passkeys return
+\texttt{fmt: none} and carry no attestation at all (iOS 16+, macOS 13+), confirmed on
+2026-09-07, so Apple devices cannot attest through a web page. A native App Attest bridge is
+the only available route and is not deployed.
+
+\subsection{Roots as consensus constants}
+
+Vendor roots are pinned by SHA-256 over DER and stored with the protocol. They are never
+fetched, never learned from a peer, and change only by a gated protocol commit. The FIDO
+metadata snapshot maps each AAGUID to its own roots, so an authenticator from one vendor
+cannot claim another's identity.
+
+Revocation lists are deliberately not consulted at validation time, because doing so would
+make validation non-deterministic and network-dependent. A compromised intermediate is
+handled as a root change, by commit. This is a conscious trade of revocation latency for
+deterministic replay.
+
+\subsection{What the mechanism does and does not prove}
+
+It proves that the registration was produced on genuine hardware of a stated class, by a key
+resident in that hardware, over a challenge the chain chose and could not be precomputed; and,
+on renewal, that the same device key was present at a later epoch.
+
+It does not prove personhood. A single human with a genuine locked device may create as many
+identities as they physically tap, since WebAuthn requires user activation per signature. The
+security claim is therefore that the cost of an identity is \emph{non-automatable human work
+on genuine hardware}, not that identities are one-to-one with people. Rooting is not a
+loophole: a rooted device is precisely what would automate the tap, and a rooted device
+cannot attest, because Android key attestation reports boot state from the secure element and
+the verifier requires \texttt{deviceLocked} and \texttt{verifiedBootState == Verified}.
+
+\subsection{What is unchanged}
+
+PoSEA is an admission mechanism and nothing else. Block production remains the deterministic
+beacon-keyed weighted draw; attestation decides membership of the draw, not its outcome, so
+faster hardware confers no advantage. Finality remains a bonded-stake quorum with
+Casper-style epoch checkpoints. Attestation and presence weight are deliberately excluded
+from fork-choice weight and from the finality quorum: presence earns reward, and never
+purchases a say in what is final.
+
+\section{Deployment}
+
+The mechanism was deployed as a genesis reroll with balances carried forward. It permitted the
+retirement of the entire per-identity apparatus that had preceded it: the sequential work
+proof and its difficulty machinery, the per-subnet ingress budget, the per-address identity
+cap, and probation. An attested identity now earns from its first lease.
+
+The lease is $360$ epochs at six-minute epochs, or $36$ hours. Android and TPM bindings are
+\emph{leased} rather than permanent because their attestation keys rotate; a binding that
+outlived the key would permit one device to bind a fresh identity per rotation. Renewal
+re-attests.
+
+\section{Costs, stated plainly}
+
+\subsection{Vendor authority in the trust path}
+
+Verification requires trusting that Google's and Microsoft's attestation roots sign only
+genuine hardware. This is a centralisation cost in a system whose premise is that no such
+authority should be necessary, and we do not think it can be argued away.
+
+We observe only that every Sybil mechanism trusts something: Proof of Work trusts that no
+coalition controls a hash majority, an assumption weakening empirically; Proof of Stake trusts
+that concentrated holders do not collude. PoSEA trusts pinned vendor roots, verified offline,
+with no service able to revoke a participant at validation time. We regard this as a different
+trust assumption rather than a strictly worse one, and we note that reasonable readers
+disagree.
+
+\subsection{Exclusion of modified devices}
+
+A device whose owner has unlocked its bootloader cannot attest and cannot mine in the open
+lane. This excludes, disproportionately, the users most committed to the principle that an
+owner should control their own hardware --- that is, the constituency most sympathetic to a
+permissionless chain. The deployment mitigates this only partially, by a bonded lane requiring
+no device at all, which is a capital gate and therefore not a substitute.
+
+\section{Open problem}
+
+The security of the construction reduces to an empirical quantity we cannot presently bound:
+the cost of extracting an attestation private key from a secure element, and whether that cost
+is specific to a hardware model or generalises across a chip family.
+
+If extraction is per-model and expensive, device scarcity holds and the adversary must
+purchase devices. If a single extraction generalises across a family, the adversary obtains an
+oracle for minting attestations and the construction degrades to precisely the identity farm it
+was built to prevent, with the additional disadvantage of having excluded honest modified
+devices in the meantime.
+
+We are not aware of a satisfying public treatment of this question at the granularity the
+design requires, and we regard establishing it as the most valuable next step. We would rather
+learn that the assumption fails than deploy on it silently.
+
+\section{Conclusion}
+
+Per-identity admission rules cannot solve identity farming, because their cost is linear in
+identities and therefore neutral between an honest participant and an adversary. The
+alternative is to change what an identity is. Anchoring it in a physically distinct secure
+element makes identity scarce rather than expensive, at the price of admitting vendor
+attestation authorities into the trust path and excluding owners who have taken control of
+their hardware. Whether that price is worth paying depends on an empirical question about
+secure element extraction costs that remains, to our knowledge, open.
+
+\section*{Availability}
+
+The implementation, the attestation verifier, and the deployment history are public at
+\url{https://github.com/hclivess/nado}. The specification is at
+\texttt{doc/device-attestation.md}. The network is pre-mainnet; there is no token sale and
+nothing offered for purchase.
+
+\end{document}
