@@ -41,8 +41,30 @@ or add an affiliation.
    - **Abstract:** paste from the paper, plain text, no LaTeX markup
    - **Keywords:** `Sybil resistance`, `remote attestation`, `trusted execution environment`,
      `WebAuthn`, `consensus`, `blockchain`, `proof of personhood`, `secure element`
-   - **Category:** applications / cryptographic protocols
+   - **Category:** Applications
+   - **Publication info:** Published nowhere else
+   - **License:** CC BY (Creative Commons Attribution) --- irrevocable, chosen once
    - **PDF**
+
+### Hard requirements checked against the live form (2026-09-09)
+
+- The PDF **must contain the author email address**. The form states it explicitly. The paper
+  now carries `admin@bismuth.cz` in the author block; a PDF compiled before that change is
+  non-compliant.
+- Not anonymous: title, author name and contact address on the first page. Satisfied.
+- Must fit A4 or US Letter. The document class is `a4paper`. Satisfied.
+- Abstract is entered as plain text in the form. HTML is rejected; LaTeX math is rendered via
+  MathJax. Copying from the compiled PDF often produces invalid UTF-8, so paste from the
+  `.tex` source instead.
+
+### The rule that removes the second attempt
+
+> "Once withdrawn, the paper cannot be resurrected and follow-up versions of the same work will
+> not be accepted later as another paper."
+
+There is no retry. A withdrawn paper cannot be resubmitted, and neither can a later version of
+the same work. This is a stronger constraint than a rejection, and it is the reason to check the
+PDF before submitting rather than after.
 
 3. Submissions are screened by editors before appearing. Expect a few days, not minutes.
 
