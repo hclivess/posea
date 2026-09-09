@@ -112,6 +112,7 @@ the assumption fails.
 
 ```
 paper/posea.tex     the write-up, submission-formatted
+SUBMISSION.md       how to compile and where to submit it
 SPEC.md             normative specification
 posea/_parse.py     attestation parsing and the per-device binding handle
 roots/              pinned vendor attestation roots (PEM)
