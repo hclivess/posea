@@ -42,8 +42,13 @@ or add an affiliation.
    - **Email:** admin@bismuth.cz (publicly visible, permanently)
    - **Affiliation:** leave blank, or NADO if you want one shown
    - **Abstract:** paste from the paper, plain text, no LaTeX markup
-   - **Keywords:** `Sybil resistance`, `remote attestation`, `trusted execution environment`,
-     `WebAuthn`, `consensus`, `blockchain`, `proof of personhood`, `secure element`
+   - **Keywords** (the form enforces: comma separated, each phrase at most 40 characters, no
+     LaTeX, **120 characters total**):
+
+     `Sybil resistance, remote attestation, WebAuthn, secure element, proof of personhood, TEE, blockchain`
+
+     That is 100 characters. "trusted execution environment" was dropped for "TEE" to fit; TEE is
+     the standard term in the security literature, so nothing is lost in discoverability.
    - **Category:** Applications
    - **Publication info:** Published nowhere else
    - **License:** CC BY (Creative Commons Attribution) --- irrevocable, chosen once
