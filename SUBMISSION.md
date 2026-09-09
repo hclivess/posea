@@ -37,7 +37,10 @@ or add an affiliation.
 
    - **Title:** Proof of Secure Element Attestation: Sybil Resistance from Hardware Scarcity
      Rather Than Cost
-   - **Authors and contact email**
+   - **Author:** Jan Kučera (UTF-8, with the caron. The form states that names with accents
+     must be UTF-8, not TeX codes or HTML entities)
+   - **Email:** admin@bismuth.cz (publicly visible, permanently)
+   - **Affiliation:** leave blank, or NADO if you want one shown
    - **Abstract:** paste from the paper, plain text, no LaTeX markup
    - **Keywords:** `Sybil resistance`, `remote attestation`, `trusted execution environment`,
      `WebAuthn`, `consensus`, `blockchain`, `proof of personhood`, `secure element`
