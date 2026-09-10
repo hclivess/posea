@@ -7,12 +7,15 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{microtype}
-\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage[hidelinks]{hyperref}
+\usepackage{xurl}          % break long URLs inside a two-column measure
 \usepackage{cite}
 
+% A narrow two-column measure needs hyphenation to justify well; only the emergency stretch is
+% raised, so the rare unbreakable line loosens instead of overflowing.
 \emergencystretch=1.2em
-\hyphenpenalty=1000
 
 \newtheorem{observation}{Observation}
 \newtheorem{definition}{Definition}
@@ -31,12 +34,11 @@ Sybil Resistance from Hardware Scarcity Rather Than Cost}
 
 \begin{abstract}
 Permissionless systems that reward participants rather than capital face an adversary ordinary
-countermeasures cannot price: the identity farm. Every per-identity admission rule---registration
-work, waiting periods, address caps---costs an adversary holding $n$ identities exactly
-what it costs an honest participant holding one, per identity, and the adversary amortises fixed
-setup while the honest participant cannot. In one deployment, some $1{,}000$ of
-$1{,}191$ identities belonged to two or three operators running browser farms, capturing $42\%$
-of emission.
+countermeasures cannot price: the identity farm. Any admission rule charging a fixed cost per
+identity leaves the adversary's cost-to-reward ratio equal to the honest participant's, while the
+adversary alone amortises setup across its identities. On the deployment we report, some
+$1{,}000$ of $1{,}191$ identities belonged to two or three operators running browser farms and
+captured $42\%$ of emission, after four such rules had been tried.
 
 Proof of Secure Element Attestation (PoSEA) makes identities \emph{scarce} rather than expensive,
 admitting a participant on a hardware attestation verified deterministically and offline against
@@ -71,12 +73,17 @@ construction rather than by accident.
 
 Systems that attempt to escape this by paying per participant inherit the Sybil
 problem~\cite{douceur} in its sharpest form: if an identity can be minted by a script, a reward
-paid per identity is a subsidy to whoever mints the most. This is not hypothetical. NANO's
-representative spam, Idena's validation ceremonies~\cite{idena} and Nyzo's cycle each
-encountered it, and each responded with additional per-identity rules that the next operator
-circumvented by the method that defeated the last. We report a further instance, with
-measurements, and argue that the recurrence is structural rather than a sequence of
-implementation errors.
+paid per identity is a subsidy to whoever mints the most. Deployed responses have converged on
+two shapes. One imposes a recurring cost or delay on each identity, which is the family we argue
+below cannot work. The other binds identities to something the adversary cannot replicate---a
+synchronous human ceremony in Idena's case~\cite{idena}, a physical gathering in
+proof-of-personhood~\cite{pop}---which does work, at the price of a ceremony every participant
+must attend.
+
+We report a deployment in which the first family was tried four times and failed four times, give
+the measurements, and argue that the recurrence is structural rather than a sequence of
+implementation errors. PoSEA belongs to the second family, and substitutes a physically distinct
+\emph{object} for the ceremony.
 
 \subsection{Contributions}
 
@@ -193,8 +200,10 @@ attestation statement in which
 
 \subsection{Device classes}
 
-Four classes expose hardware attestation to a web page; they differ in whether they yield a
-per-device handle, which determines whether condition~(5) is enforceable at all.
+Table~\ref{tab:classes} lists the classes considered. Four are reachable from a web page and
+differ in whether they yield a per-device handle, which decides whether condition~(5) is
+enforceable at all; the fifth is the subject of \S\ref{sec:noca} and is reachable only from a
+native client.
 
 \begin{table}[t]
 \caption{Device classes and per-device binding}
@@ -227,6 +236,10 @@ measure: they identify a model, not a unit, and are refused. Apple passkeys retu
 2026-09-07); a native App~Attest bridge is the only route and is not deployed. What cannot be
 bound is not evidence of anything, so both are excluded rather than admitted with a weaker
 guarantee.
+
+The third row of Table~\ref{tab:classes} is not a class any platform exposes. It is the path
+constructed in \S\ref{sec:noca}, reachable only from a native client, and it binds on the
+endorsement key---one per chip by manufacture, rather than one per account.
 
 \subsection{Determinism as a requirement, not a preference}
 \label{sec:determinism}
@@ -365,6 +378,45 @@ interactive proof therefore need not be signed into an artifact; it need only be
 
 \subsection{The protocol}
 
+\emph{Notation.} $E$ is a chip's endorsement key and $N$ the object name of an attestation key
+$A$ in the same chip, $N$ being a digest of $A$'s public area. $k$ is the number of challengers,
+$S_i$ the secret challenger $i$ seals and $R_i$ the seed it seals under, $b_i$ the resulting
+credential blob, and $H$ a collision-resistant hash. \emph{Ledger order} is the total order on
+published messages that every verifier agrees on; ``strictly later'' excludes equal positions.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    lifeline/.style={draw, densely dotted, gray},
+    msg/.style={-{Latex[length=1.6mm]}, thick},
+    lbl/.style={midway, above, font=\scriptsize, inner sep=1pt},
+    note/.style={font=\scriptsize\itshape, gray, anchor=west},
+  ]
+  \def\px{0}      % prover column
+  \def\cx{4.5}    % challenger column
+  \node[font=\footnotesize\bfseries] (P) at (\px,0) {prover};
+  \node[font=\footnotesize\bfseries] (C) at (\cx,0) {challenger $i$ (drawn)};
+  \draw[lifeline] (\px,-0.3) -- (\px,-5.3);
+  \draw[lifeline] (\cx,-0.3) -- (\cx,-5.3);
+
+  \draw[msg] (\px,-0.9) -- node[lbl] {1. \ $E$'s chain, $A$'s public area} (\cx,-0.9);
+  \draw[msg] (\cx,-2.0) -- node[lbl] {2. \ $b_i=\mathsf{MakeCred}(E,N,S_i;R_i)$} (\px,-2.0);
+  \draw[msg] (\px,-3.4) -- node[lbl] {3. \ $H(S_1\Vert\cdots\Vert S_k)$} (\cx,-3.4);
+  \draw[msg] (\cx,-4.6) -- node[lbl] {4. \ $(S_i,R_i)$} (\px,-4.6);
+
+  \node[note] at (\px+0.15,-2.7) {chip recovers $S_i$};
+  \node[note, text width=2.2cm] at (\cx+0.05,-1.45) {};
+
+  \draw[->, gray, thin] (-1.15,-0.6) -- (-1.15,-5.0);
+  \node[rotate=90, font=\scriptsize, gray] at (-1.35,-2.8) {ledger order};
+\end{tikzpicture}
+\caption{The four messages. Each is published strictly later in the ledger order than the message
+it answers; steps 2 and 4 occur once per drawn challenger. Nothing is signed, and the ordering,
+not any signature, is what makes the exchange a proof (\S\ref{sec:security}).}
+\label{fig:protocol}
+\end{figure}
+
 \begin{definition}[CA-free enrolment]
 \label{def:enrol}
 Let $E$ be a chip's endorsement key, certified by a silicon vendor, and $A$ an attestation key
@@ -383,8 +435,9 @@ Verifiers accept when every $b_i$ is reproduced by $(S_i, R_i)$ under $(E, N)$ a
 commitment matches the concatenation in canonical challenger order.
 \end{definition}
 
-Nothing in Definition~\ref{def:enrol} is signed and no key persists between enrolments. There
-is nothing to steal, to rotate, or to guard.
+Figure~\ref{fig:protocol} shows the exchange. Nothing in Definition~\ref{def:enrol} is signed and
+no key persists between enrolments: there is nothing to steal, to rotate, or to guard, and no
+party holds an authority another party must trust.
 
 \subsection{Challenger selection}
 \label{sec:draw}
