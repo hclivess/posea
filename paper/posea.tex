@@ -1,265 +1,767 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage[utf8]{inputenc}
+%% Proof of Secure Element Attestation
+%% Build: pdflatex posea && pdflatex posea      (no bibtex run required)
+\documentclass[conference,10pt]{IEEEtran}
+
 \usepackage[T1]{fontenc}
-\usepackage{amsmath,amssymb,amsthm}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
 \usepackage{booktabs}
-\usepackage{hyperref}
-\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cite}
+
+\emergencystretch=1.2em
+\hyphenpenalty=1000
 
 \newtheorem{observation}{Observation}
 \newtheorem{definition}{Definition}
+\newtheorem{claim}{Claim}
+
+\begin{document}
 
 \title{Proof of Secure Element Attestation:\\
 Sybil Resistance from Hardware Scarcity Rather Than Cost}
 
-\author{%
-  Jan Kučera\\
-  \texttt{admin@bismuth.cz}\\
-  \texttt{nadochain.com} \quad \texttt{github.com/hclivess/nado}
-}
+\author{\IEEEauthorblockN{Jan Ku\v{c}era}
+\IEEEauthorblockA{\textit{NADO}\\
+\texttt{admin@bismuth.cz}}}
 
-\date{September 2026}
-
-\begin{document}
 \maketitle
 
 \begin{abstract}
-Permissionless systems that distribute rewards per participant rather than per unit of
-capital face an adversary that ordinary countermeasures cannot price: the identity farm.
-We observe that every per-identity admission rule --- registration work, waiting periods,
-per-address caps, per-subnet budgets, probation --- imposes a cost that is linear in the
-number of identities, and therefore charges an honest participant holding one identity
-exactly what it charges an adversary holding $n$, per identity. The adversary amortises;
-the honest participant does not. We report a deployment in which this failure was total:
-on a live chain, approximately $1{,}000$ of $1{,}191$ registered mining identities belonged
-to two or three operators running browser farms on rented servers, capturing roughly $42\%$
-of block emission.
+Permissionless systems that reward participants rather than capital face an adversary ordinary
+countermeasures cannot price: the identity farm. Every per-identity admission rule---registration
+work, waiting periods, address caps---costs an adversary holding $n$ identities exactly
+what it costs an honest participant holding one, per identity, and the adversary amortises fixed
+setup while the honest participant cannot. In one deployment, some $1{,}000$ of
+$1{,}191$ identities belonged to two or three operators running browser farms, capturing $42\%$
+of emission.
 
-We describe Proof of Secure Element Attestation (PoSEA), which replaces the attempt to make
-identities \emph{expensive} with an attempt to make them \emph{scarce}. Admission requires a
-WebAuthn hardware attestation: the device generates a non-exportable key inside its secure
-element and signs a chain-selected challenge, producing a certificate chain terminating at a
-vendor attestation root pinned as a consensus constant. Verification is deterministic and
-offline; no validator contacts a vendor. Where the device class exposes a per-device
-certificate, that certificate is bound to a single identity for the duration of a lease.
-Block production is unchanged and remains a deterministic beacon-keyed weighted draw, so the
-mechanism confers no advantage on faster hardware.
+Proof of Secure Element Attestation (PoSEA) makes identities \emph{scarce} rather than expensive,
+admitting a participant on a hardware attestation verified deterministically and offline against
+pinned vendor roots, one identity per physical device. We then address its largest gap: of $664$
+measured attempts, $26.8\%$ came from machines with a healthy TPM~2.0 that no platform will
+certify, the vendor's attestation-key service having no authority registered for the chip. Their
+vendor-signed \emph{endorsement} key cannot sign, which is why the standard remedy is a privacy
+certificate authority holding a key able to assert any chip's identity.
 
-We give the deployment results, and we state plainly the two costs: the scheme places vendor
-attestation authorities in the trust path, and it excludes devices whose owners have unlocked
-them. We identify the security of the construction as reducing to an unresolved empirical
-question --- whether the cost of extracting attestation keys from a secure element is
-per-model or generalises across a chip family --- and we invite work on it.
+We give an enrolment protocol admitting such machines with no certificate authority and no
+long-lived key at all, resting on the observation that \texttt{TPM2\_MakeCredential}'s credential
+blob is deterministic in its (seed, name, secret) triple: a challenge issued once is replayable
+offline by every verifier forever, so a commit--reveal across $k$ beacon-drawn challengers,
+ordered by the ledger, supplies the freshness a signature would otherwise provide. Its security
+reduces to publication order and to one TPM object attribute. We validate it against a TPM~2.0
+simulator and physical silicon, and state the cost: automatic enrolment removes the human tap, so
+identity price collapses onto the price of a chip.
 \end{abstract}
+
+\begin{IEEEkeywords}
+Sybil resistance, hardware attestation, trusted platform module, permissionless consensus,
+commit--reveal
+\end{IEEEkeywords}
 
 \section{Introduction}
 
 A permissionless network that wishes to reward people rather than capital must decide who
-counts as a person. Proof of Work answers by making participation expensive in energy; Proof
-of Stake answers by making it expensive in capital. Both are auctions, and in an auction the
-participant with the most of the scarce input wins. Concentration follows by construction
-rather than by accident.
+counts as a person. Proof of Work~\cite{nakamoto} answers by making participation expensive in
+energy; Proof of Stake answers by making it expensive in capital. Both are auctions, and in an
+auction the participant holding the most of the scarce input wins. Concentration follows by
+construction rather than by accident.
 
-Systems that attempt to escape this by paying per participant inherit a different problem.
-If an identity can be minted by a script, the reward per identity becomes a subsidy to
-whoever can mint the most.
+Systems that attempt to escape this by paying per participant inherit the Sybil
+problem~\cite{douceur} in its sharpest form: if an identity can be minted by a script, a reward
+paid per identity is a subsidy to whoever mints the most. This is not hypothetical. NANO's
+representative spam, Idena's validation ceremonies~\cite{idena} and Nyzo's cycle each
+encountered it, and each responded with additional per-identity rules that the next operator
+circumvented by the method that defeated the last. We report a further instance, with
+measurements, and argue that the recurrence is structural rather than a sequence of
+implementation errors.
 
-This is not a hypothetical failure. NANO's representative spam, Idena's validation
-ceremonies and Nyzo's cycle each encountered it, and each responded with additional
-per-identity rules that the next operator circumvented by the same method as the last. We
-report a further instance, with measurements, and argue that the recurrence is structural.
+\subsection{Contributions}
+
+\begin{itemize}
+  \item We state and measure the linearity argument that makes per-identity admission rules
+        ineffective against identity farms (\S\ref{sec:linearity}), with deployment data from a
+        live chain on which four successive such rules failed.
+  \item We specify PoSEA, an admission predicate based on secure-element attestation with
+        deterministic, offline, replicable verification, and the per-device binding that makes
+        ``one device, one identity'' enforceable (\S\ref{sec:posea}).
+  \item We quantify the mechanism's coverage gap: $26.8\%$ of admission attempts are machines
+        with functioning TPM~2.0 hardware that no platform will certify
+        (\S\ref{sec:gap}).
+  \item We give a certificate-authority-free enrolment protocol closing that gap
+        (\S\ref{sec:noca}). Its novelty is not cryptographic: it is the observation that a TPM
+        credential blob is deterministic in its inputs, which converts an inherently
+        interactive possession proof into an artifact any verifier can re-derive, so that
+        ledger \emph{ordering} can replace an issuer's signature.
+  \item We analyse its security (\S\ref{sec:security}), reporting that it reduces to
+        publication order and to the \texttt{restricted} object attribute, and validate it
+        against a TPM~2.0 simulator and physical silicon (\S\ref{sec:eval}).
+  \item We state the costs without mitigation (\S\ref{sec:discussion}), including one the
+        CA-free path introduces: it removes the human tap, so the security argument shifts from
+        non-automatable human work to hardware price alone.
+\end{itemize}
+
+\section{Background and threat model}
 
 \subsection{Deployment context}
 
-NADO is a permissionless chain with a two-lane block production schedule. A \emph{bonded}
-lane weights producers by stake. An \emph{open} lane, which receives $30\%$ of slots, was
-designed so that a participant with no capital could produce blocks from an ordinary mobile
-device. Selection in both lanes is a deterministic, beacon-keyed weighted draw: exactly one
-hash determines each slot's producer, so there is no grinding advantage and no hash race.
+NADO is a permissionless chain with a two-lane block production schedule. A \emph{bonded} lane
+weights producers by stake. An \emph{open} lane, receiving $30\%$ of slots, was designed so a
+participant with no capital could produce blocks from an ordinary mobile device. Selection in
+both lanes is a deterministic beacon-keyed weighted draw: one hash determines each slot's
+producer, so there is no grinding advantage and no hash race. Finality is a bonded-stake quorum
+with Casper-style epoch checkpoints~\cite{casper}.
 
 The open lane was defended, successively, by a non-parallelisable sequential work proof at
 registration, a per-subnet ingress budget, a per-address identity cap, and a probationary
 period before a new identity could earn. Each was deployed in response to observed farming.
 Each failed.
 
+\subsection{Why per-identity rules fail}
+\label{sec:linearity}
+
 \begin{observation}[Linearity]
 \label{obs:linearity}
-Let $c$ be the cost imposed by an admission rule on a single identity, and let an adversary
-control $n$ identities. The adversary's total cost is $nc$ and its reward is $n r$ for
-per-identity reward $r$; the honest participant's cost is $c$ against reward $r$. The ratio
-of cost to reward is $c/r$ for both. Raising $c$ therefore does not disadvantage the
-adversary relative to the honest participant. It disadvantages every participant equally,
-and prices out the honest participant first, because the adversary amortises fixed setup
-across $n$ while the honest participant does not.
+Let $c$ be the cost an admission rule imposes per identity and $r$ the reward per identity. An
+adversary controlling $n$ identities pays $nc$ and earns $nr$; an honest participant pays $c$
+and earns $r$. The cost-to-reward ratio is $c/r$ for both. Raising $c$ therefore does not
+disadvantage the adversary relative to the honest participant; it disadvantages both equally,
+and prices out the honest participant first, because the adversary amortises fixed setup across
+$n$ while the honest participant cannot.
 \end{observation}
 
-Observation~\ref{obs:linearity} is elementary, and we state it explicitly because the
-literature and practice both continue to propose per-identity rules as anti-Sybil measures.
-The rule does not have to be weak to fail. It fails because it is per identity.
+Observation~\ref{obs:linearity} is elementary. We state it explicitly because practice
+continues to propose per-identity rules as anti-Sybil measures, and because it identifies what
+a working defence must do: bound $n$ itself, rather than tax it.
 
 \subsection{Measurement}
 
 On 2026-09-06 the open lane carried $1{,}191$ registered identities. Approximately $1{,}000$
-of these were attributable to two or three operators running headless browser farms on
-rented Linux and Windows servers. The farmed set captured approximately $42\%$ of total
-emission. Every honest participant was, in effect, subsidising three people.
+were attributable to two or three operators running headless browser farms on rented Linux and
+Windows servers. The farmed set captured approximately $42\%$ of total emission. Every honest
+participant was, in effect, subsidising three people.
 
-\section{Construction}
+\subsection{Threat model}
+\label{sec:threat}
+
+The adversary is computationally bounded, may hold arbitrary capital, may rent unlimited
+conventional compute, and controls every host it operates, including their operating systems.
+It may create unlimited network identities and key pairs at negligible cost, may observe all
+ledger state, and may participate in the protocol in any role including as a validator.
+
+We assume the adversary cannot (i) forge a signature from a silicon vendor's attestation root,
+(ii) extract a private key from a secure element it does not physically possess, or (iii) cause
+a genuine secure element to attest to a key that does not reside in it. Assumption (ii) is
+bounded, not absolute, and \S\ref{sec:open} treats it as the construction's principal open
+question; published attacks require physical access~\cite{faultpm,tpmfail}, which prices
+extraction per device rather than granting a remote oracle---so far.
+
+We do not assume any honest majority among challengers in \S\ref{sec:noca}; we assume only that
+not all $k$ drawn challengers collude, and \S\ref{sec:security} makes the dependence explicit.
+We do not assume verifier clocks agree: all validity is evaluated at a ledger-agreed anchor
+time.
+
+\section{PoSEA}
+\label{sec:posea}
 
 \subsection{Intuition}
 
-Only two properties resist replication by an adversary with money but no people: capital,
-which the bonded lane already weighs, and a physically distinct object. PoSEA anchors open-lane
-identity in the second.
-
-A secure element is a physically distinct object that can attest to its own genuineness. It
-cannot be instantiated in software, and --- crucially --- it cannot be instantiated in
-software \emph{by an adversary who already controls the host}.
+Only two properties resist replication by an adversary with money but no people: capital, which
+the bonded lane already weighs, and a physically distinct object. PoSEA anchors open-lane
+identity in the second. A secure element is a physically distinct object that can attest to its
+own genuineness; it cannot be instantiated in software, and---the property that matters
+here---it cannot be instantiated in software by an adversary who already controls the host.
 
 \begin{definition}[PoSEA admission]
-An identity is admitted to the open lane for a lease period if it presents a WebAuthn
+\label{def:admission}
+An identity is admitted for one lease period if it presents a WebAuthn~\cite{webauthn}
 attestation statement in which
 \begin{enumerate}
-  \item a non-exportable key was generated inside a secure element,
-  \item that key signs a challenge derived from a chain-selected beacon value,
-  \item the attestation certificate chain terminates at a vendor root pinned in the protocol,
-  \item the attested boot state indicates a locked bootloader and verified boot, and
-  \item where the device class exposes a per-device certificate, that certificate is not
-        currently bound to another identity.
+  \item a non-exportable key was generated inside a secure element;
+  \item that key signs a challenge derived from a ledger-selected beacon value, so the
+        signature cannot be precomputed;
+  \item the attestation certificate chain terminates at a vendor root pinned as a protocol
+        constant, every signature verifying at the anchor time;
+  \item the attested boot state indicates a locked bootloader and verified
+        boot~\cite{androidkeyattest}, where the class reports it; and
+  \item where the class exposes a per-device certificate, that certificate is not currently
+        bound to another identity.
 \end{enumerate}
 \end{definition}
 
 \subsection{Device classes}
 
-Four classes expose hardware attestation to a web page. They differ in whether they yield a
-per-device handle, which determines whether condition (5) is enforceable.
+Four classes expose hardware attestation to a web page; they differ in whether they yield a
+per-device handle, which determines whether condition~(5) is enforceable at all.
 
-\begin{center}
-\begin{tabular}{@{}llll@{}}
+\begin{table}[t]
+\caption{Device classes and per-device binding}
+\label{tab:classes}
+\centering
+\small
+\begin{tabular}{@{}llc@{}}
 \toprule
-Class & Format & Pinned root & Per-device? \\
+Class & \texttt{fmt} & Bindable by \\
 \midrule
-Android, locked bootloader & \texttt{android-key} & Google HW attestation roots & Yes (RKP, Android 12+) \\
-Windows, physical TPM 2.0 & \texttt{tpm} & Microsoft TPM Root CA 2014 & Yes (AIK per TPM/account) \\
-FIDO2 security key & \texttt{packed} & per-AAGUID FIDO MDS roots & No (batch, $\geq 10^5$ units) \\
-Apple Secure Enclave & \texttt{apple} & Apple WebAuthn Root CA & No attestation via passkeys \\
+Android 12+, locked & \texttt{android-key} & RKP cert \\
+Windows, physical TPM & \texttt{tpm} & AIK cert \\
+Any TPM 2.0, no CA (\S\ref{sec:noca}) & --- & endorsement key \\
+FIDO2 security key & \texttt{packed} & \emph{not bindable} \\
+Apple Secure Enclave & \texttt{apple} & \emph{no attestation} \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
-On Android with remote key provisioning, the attestation certificate at position
-\texttt{x5c[1]} is unique to the device and reused for every credential it creates until
-rotation (approximately two weeks in the observed sample). On Windows, the AIK certificate is
-unique to the pair (TPM, account). These two classes therefore admit enforcement of condition
-(5), and are the classes the deployment accepts.
+With remote key provisioning (Android 12+), the certificate at \texttt{x5c[1]} is unique to the
+device and reused for every credential it creates until rotation---approximately two weeks in
+our sample. A pre-RKP device instead carries a multi-year intermediate shared by up to $10^5$
+units; the two are distinguished by validity span, and the batch case is refused, since binding
+a shared certificate to one identity would lock out every other owner of that model. On
+Windows, the attestation identity key (AIK) certificate is unique to the pair (TPM, account).
 
 FIDO2 authenticators issue one batch certificate per $\geq 10^5$ units by design, as a privacy
-measure; they identify a model, not a unit, and are refused. Apple passkeys return
-\texttt{fmt: none} and carry no attestation at all (iOS 16+, macOS 13+), confirmed on
-2026-09-07, so Apple devices cannot attest through a web page. A native App Attest bridge is
-the only available route and is not deployed.
+measure: they identify a model, not a unit, and are refused. Apple passkeys return
+\texttt{fmt: none} and carry no attestation through a web page (iOS 16+, macOS 13+, confirmed
+2026-09-07); a native App~Attest bridge is the only route and is not deployed. What cannot be
+bound is not evidence of anything, so both are excluded rather than admitted with a weaker
+guarantee.
 
-\subsection{Roots as consensus constants}
+\subsection{Determinism as a requirement, not a preference}
+\label{sec:determinism}
 
-Vendor roots are pinned by SHA-256 over DER and stored with the protocol. They are never
-fetched, never learned from a peer, and change only by a gated protocol commit. The FIDO
-metadata snapshot maps each AAGUID to its own roots, so an authenticator from one vendor
-cannot claim another's identity.
+In a replicated setting, admission is consensus input: every verifier must reach the same
+verdict on the same bytes, forever, including on replay years later. This forces four
+decisions that a single-verifier deployment could take differently.
 
-Revocation lists are deliberately not consulted at validation time, because doing so would
-make validation non-deterministic and network-dependent. A compromised intermediate is
-handled as a root change, by commit. This is a conscious trade of revocation latency for
-deterministic replay.
+Roots are pinned by SHA-256 over DER and stored with the protocol. They are never fetched,
+never learned from a peer, and change only by a gated commit. Revocation lists are deliberately
+not consulted, because doing so makes validation network-dependent and time-dependent; a
+compromised intermediate is handled as a root-set change. This trades revocation latency for
+deterministic replay, consciously.
+
+Certificate validity is evaluated at a ledger-agreed anchor time rather than a wall clock. With
+wall clocks, a certificate expiring mid-block is valid on one verifier and expired on the next:
+a fork with no adversary involved.
+
+The attestation parser must reject duplicate CBOR map keys. Permitting them allows a statement
+to verify as one chain and bind as another. This, and the anchor-time rule, correspond to holes
+found and closed in the deployment.
+
+Finally, a binding must occupy its per-device uniqueness key \emph{within} the block that
+creates it, so two provers cannot bind the same device in one block by each checking only
+against parent state.
 
 \subsection{What the mechanism does and does not prove}
 
-It proves that the registration was produced on genuine hardware of a stated class, by a key
-resident in that hardware, over a challenge the chain chose and could not be precomputed; and,
-on renewal, that the same device key was present at a later epoch.
+It proves the registration was produced on genuine hardware of a stated class, by a key
+resident in that hardware, over a challenge that could not be precomputed; and on renewal, that
+the same device key was present later.
 
-It does not prove personhood. A single human with a genuine locked device may create as many
-identities as they physically tap, since WebAuthn requires user activation per signature. The
-security claim is therefore that the cost of an identity is \emph{non-automatable human work
-on genuine hardware}, not that identities are one-to-one with people. Rooting is not a
-loophole: a rooted device is precisely what would automate the tap, and a rooted device
-cannot attest, because Android key attestation reports boot state from the secure element and
-the verifier requires \texttt{deviceLocked} and \texttt{verifiedBootState == Verified}.
+It does not prove personhood. One human with one genuine device may create as many identities
+as they physically tap, because WebAuthn requires user activation per signature. The claim is
+that an identity costs \emph{non-automatable human work on genuine hardware}, not that
+identities map one-to-one onto people; proof-of-personhood in the stronger sense remains a
+separate problem~\cite{pop,offline-pseudonyms}. Rooting is not a loophole, and is worth stating
+because it is the first objection raised: a rooted device is precisely what would automate the
+tap, and a rooted device cannot attest, because key attestation reports boot state from the
+secure element itself.
 
-\subsection{What is unchanged}
+Block production is unchanged. Attestation decides membership of the draw, not its outcome, so
+faster hardware confers no advantage; attestation and presence weight are excluded from
+fork-choice weight and from the finality quorum. Presence earns reward and never purchases a
+say in what is final.
 
-PoSEA is an admission mechanism and nothing else. Block production remains the deterministic
-beacon-keyed weighted draw; attestation decides membership of the draw, not its outcome, so
-faster hardware confers no advantage. Finality remains a bonded-stake quorum with
-Casper-style epoch checkpoints. Attestation and presence weight are deliberately excluded
-from fork-choice weight and from the finality quorum: presence earns reward, and never
-purchases a say in what is final.
+\section{The uncertified-chip gap}
+\label{sec:gap}
 
-\section{Deployment}
+Table~\ref{tab:gap} gives the outcome of $664$ consecutive admission attempts.
 
-The mechanism was deployed as a genesis reroll with balances carried forward. It permitted the
-retirement of the entire per-identity apparatus that had preceded it: the sequential work
-proof and its difficulty machinery, the per-subnet ingress budget, the per-address identity
-cap, and probation. An attested identity now earns from its first lease.
+\begin{table}[t]
+\caption{Admission attempts by outcome ($n=664$)}
+\label{tab:gap}
+\centering
+\small
+\begin{tabular}{@{}lr@{}}
+\toprule
+Outcome & Share \\
+\midrule
+Succeeds (phone / hardware wallet) & $47.9\%$ \\
+\textbf{TPM healthy, platform will not attest} & $\mathbf{26.8\%}$ \\
+User-fixable (password manager took the ceremony) & $18.8\%$ \\
+Succeeds (Windows Hello attests) & $6.5\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-The lease is $360$ epochs at six-minute epochs, or $36$ hours. Android and TPM bindings are
-\emph{leased} rather than permanent because their attestation keys rotate; a binding that
-outlived the key would permit one device to bind a fresh identity per rotation. Renewal
-re-attests.
+The second row is not a hardware fault. A WebAuthn \texttt{tpm} statement requires
+\texttt{certInfo} to be signed by the key in \texttt{x5c[0]}, so the chip needs an
+attestation-key \emph{certificate}, which on Windows means the platform vendor's attestation
+service. For a large population of otherwise healthy machines, that service has no certificate
+authority registered for the chip's KeyId and answers HTTP~404. The vendor has confirmed the
+condition as service-side, with KeyIds not registrable by end users and no supported route for
+a user to alter the trust database. No client-side change repairs it. On Linux the situation is
+simpler and worse: there is no equivalent service and there has never been a path.
 
-\section{Costs, stated plainly}
+We established that the platform path could not be repaired from the client side by decoding
+the platform's own key-attestation claim structure, which we document
+separately~\cite{claimformat}: the platform API mints a fresh per-call signer whose certificate
+no relying party has ever seen, so no arrangement of client-side calls can satisfy WebAuthn's
+requirement.
+
+These machines are not short of evidence. They carry a vendor-signed \emph{endorsement}
+certificate---AMD's chaining to \texttt{CN=AMDTPM}, Intel's through the CSME issuing
+authorities the chip holds in its own non-volatile memory. The hardware proof exists and is
+verifiable offline against pinned roots. What is missing is one statement: \emph{this
+attestation key lives in that certified chip}.
+
+\section{Enrolment without a certificate authority}
+\label{sec:noca}
+
+\subsection{Why the obvious remedies fail}
+
+Two proposals recur and both must be rejected.
+
+\emph{Present the endorsement certificate as the proof.} It fails twice: the certificate is
+public data, so anyone who has seen a machine's certificate can present it; and the endorsement
+key \emph{cannot sign}. TCG defines it as a restricted decryption key~\cite{tcgek}, and real
+certificates carry \texttt{Key Usage: critical, Key Encipherment} with \texttt{digitalSignature}
+absent. It can never occupy the \texttt{x5c[0]} slot.
+
+\emph{Derive the challenge from public ledger data,} so no round trip is needed. Anything every
+verifier can recompute, the prover can recompute. The resulting proof proves nothing.
+
+Proving possession of a decryption-only key has exactly one shape: send it something only it can
+decrypt and observe it return. That is \texttt{TPM2\_ActivateCredential}~\cite{tpm2}, and it is
+inherently interactive---which is why TCG specified the attestation-key-plus-privacy-CA model,
+and why the failing service exists at all.
+
+\subsection{Replacing the authority with an ordering}
+
+A certificate authority converts the interactive proof into a durable artifact by signing it.
+That works, and it is expensive in a sense unrelated to computation: a long-lived key able to
+assert any endorsement identity is a key able to mint identities, and must be guarded as such
+for the lifetime of the system. In a permissionless setting it is also a single party the whole
+mechanism defers to, which is the objection the mechanism exists to answer.
+
+\begin{observation}[Replayable challenges]
+\label{obs:det}
+The credential blob returned by \texttt{TPM2\_MakeCredential} is a deterministic function of the
+triple (seed, object name, secret). Only the OAEP-wrapped seed is randomised, and no verifier
+requires that half.
+\end{observation}
+
+Observation~\ref{obs:det} follows directly from the credential-protection construction of TPM
+2.0 Part~1~\S24~\cite{tpm2}: the blob is a symmetric encryption of the secret under a key
+derived from (seed, name) by KDFa, with an HMAC over the ciphertext and the name under a second
+derivation from the same pair. Every input is fixed by the triple. We confirmed it empirically:
+two calls with the same seed produce identical blobs and different wrapped seeds.
+
+It is what removes the authority. A challenge issued once can be recomputed by every verifier
+afterwards, offline and indefinitely, from values that are public after the fact. The
+interactive proof therefore need not be signed into an artifact; it need only be
+\emph{ordered}---and a ledger already orders things.
+
+\subsection{The protocol}
+
+\begin{definition}[CA-free enrolment]
+\label{def:enrol}
+Let $E$ be a chip's endorsement key, certified by a silicon vendor, and $A$ an attestation key
+in the same chip with object name $N$. An enrolment is the following sequence of published
+messages, each strictly later in the ledger order than the message it answers:
+\begin{enumerate}
+  \item the prover publishes $E$'s certificate chain and $A$'s public area, from which $N$ is
+        derived;
+  \item each of $k$ drawn challengers publishes
+        $b_i = \texttt{MakeCredential}(E, N, S_i; R_i)$ together with the wrapped seed;
+  \item the prover publishes $H(S_1 \Vert \cdots \Vert S_k)$, having recovered every $S_i$ by
+        \texttt{TPM2\_ActivateCredential};
+  \item each challenger publishes $(S_i, R_i)$.
+\end{enumerate}
+Verifiers accept when every $b_i$ is reproduced by $(S_i, R_i)$ under $(E, N)$ and the
+commitment matches the concatenation in canonical challenger order.
+\end{definition}
+
+Nothing in Definition~\ref{def:enrol} is signed and no key persists between enrolments. There
+is nothing to steal, to rotate, or to guard.
+
+\subsection{Challenger selection}
+\label{sec:draw}
+
+The residual attack is a challenger privately leaking $S_i$ to a prover holding no chip. The
+defence is not to trust challengers, but to require several and to draw rather than accept
+them: the prover must recover every $S_i$, so forgery requires all $k$ to collude. This
+replaces a key someone promises to protect with a property the system can observe.
+
+The draw is weighted by a quantity the adversary cannot manufacture cheaply---in the
+deployment, bonded stake---and keyed on the same grind-resistant beacon that keys producer
+selection, so it is unpredictable before the enrolment is published and identical for every
+verifier. An unweighted draw over a permissionless set is the obvious error: cheap identities
+crowd the ballot and an adversary able to mint them draws its own challengers, restoring the
+attack in full. The draw is without replacement, since seating one challenger twice halves the
+collusion forgery requires. A short set is refused rather than accepted: an adversary able to
+shrink the challenger pool must not thereby reduce what forgery costs.
+
+\subsection{Binding and freshness}
+
+Identity binds to the \emph{endorsement} key, never to an attestation key. A chip holds
+unlimited attestation keys, so binding to one would hand a single machine an identity per
+enrolment; the handle is SHA-256 over the endorsement certificate's
+\texttt{SubjectPublicKeyInfo}. Regenerating the endorsement seed to fake a new chip changes
+that key, and the vendor's certificate no longer matches it, so the fake cannot enrol at all.
+
+An enrolment records that a key lives in a certified chip; it says nothing about when. Each
+admission therefore presents a fresh \texttt{TPM2\_Certify} under the enrolled key whose
+\texttt{extraData} carries that admission's own challenge. The verifier additionally checks the
+\texttt{TPM\_GENERATED} magic, the \texttt{TPM\_ST\_ATTEST\_CERTIFY} structure type---a
+different type places different fields at the same offsets, so accepting one would mean parsing
+some other structure as this one---and that the certified object is the enrolled key rather
+than another object in the chip.
+
+\section{Security analysis}
+\label{sec:security}
+
+\subsection{The ordering is the proof}
+
+\begin{claim}
+\label{claim:order}
+The equations of Definition~\ref{def:enrol}, verified without regard to publication order, are
+satisfiable by a prover holding no TPM.
+\end{claim}
+
+Such a prover chooses $S_i$ and $R_i$ itself and computes $b_i$ from the endorsement public key,
+which is public. Every check passes: each $b_i$ is reproduced by its $(S_i, R_i)$, and the
+commitment matches by construction. Presented with all four messages simultaneously, a verifier
+cannot distinguish this from a genuine enrolment.
+
+What separates them is that message~3 was published after every message~2 and before every
+message~4. The prover cannot learn $S_i$ except by holding the chip, and must commit before the
+reveal, so it cannot read the answer off the ledger. Message~2 cannot precede message~1,
+because \texttt{MakeCredential} seals to a specific object name, which is a digest of the
+public area published in message~1. The four messages are therefore minimal: no adjacent pair
+may be merged.
+
+Two consequences are easy to implement incorrectly. First, equal ordering positions are not
+ordered: two messages in one block have no order verifiers agree on, so every comparison must
+be strict. Second, the commitment must be over all $k$ secrets jointly. One commitment per
+secret would let a prover answer whichever challenges it managed to open and abandon the rest,
+which is the $k$-of-$k$ requirement dissolving into $1$-of-$k$.
+
+\subsection{The attribute the argument rests on}
+
+\begin{claim}
+\label{claim:restricted}
+If an unrestricted signing key may be enrolled, the certify of \S\ref{sec:noca} carries no
+information about where a key resides.
+\end{claim}
+
+A \texttt{restricted} signing key signs only structures the TPM itself generated. That is what
+makes a certify evidence rather than merely a signature. An unrestricted key signs whatever its
+host composes, including a forged \texttt{TPMS\_ATTEST} certifying a key that never existed in
+any chip; a verifier would then accept the forgery under a genuinely enrolled name. The public
+area is therefore validated before any challenge is issued, and must further carry
+\texttt{sensitiveDataOrigin}---absent it, the private half may have been generated outside and
+imported---and \texttt{fixedTPM} with \texttt{fixedParent}, absent which the key is duplicable
+to another chip and one enrolment would licence every machine it is copied to.
+
+\subsection{Attacks considered}
+
+Table~\ref{tab:attacks} lists the attacks the construction refuses and the mechanism that
+refuses each. We include the case it does \emph{not} refuse.
+
+\begin{table}[t]
+\caption{Attacks and the mechanism that refuses them}
+\label{tab:attacks}
+\centering
+\small
+\begin{tabular}{@{}p{0.44\columnwidth}p{0.46\columnwidth}@{}}
+\toprule
+Attack & Refused by \\
+\midrule
+Replay a copied endorsement certificate & Possession proof: the seed unwraps only under the endorsement private key \\
+Prover seals its own challenge & Challenger set is drawn, not chosen (\S\ref{sec:draw}) \\
+Prover commits after seeing a reveal & Strict ordering, message 3 before 4 \\
+Prover opens some challenges, guesses the rest & Joint commitment over all $k$ secrets \\
+Challenger reveals a different secret & Blob already published; MakeCredential is deterministic \\
+Enrol a second key for a second identity & Binding is on the endorsement key \\
+Reuse an old certify & \texttt{extraData} carries the admission's own challenge \\
+Certify some other object in the chip & Certified name must equal the enrolled name \\
+Enrol a key that can sign arbitrary data & \texttt{restricted} required (Claim~\ref{claim:restricted}) \\
+Duplicate an enrolled key to another chip & \texttt{fixedTPM}, \texttt{fixedParent} required \\
+\midrule
+\textbf{All $k$ challengers collude} & \textbf{Not refused} (\S\ref{sec:security}) \\
+\textbf{Physical key extraction} & \textbf{Not refused} (\S\ref{sec:open}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Collusion of all $k$ drawn challengers admits a prover with no chip. We do not claim otherwise.
+The design intent is that this is a condition the system can \emph{observe}---the drawn set is
+public, weighted and beacon-keyed---rather than a key whose custody someone asserts. With
+$k=3$, the smallest value at which no single challenger can admit identities alone, an
+adversary must both control challengers and win the draw for the specific enrolment it wishes
+to forge.
+
+\section{Implementation}
+\label{sec:impl}
+
+The reference implementation is dependency-free Python: KDFa, AES-CFB, MGF1, RSA-OAEP, PKCS\#1
+v1.5 verification and the DER encoding are written out rather than imported. This is not
+minimalism for its own sake. A verifier that must agree byte-for-byte with every other verifier
+is poorly served by whichever version of a library each host happens to have installed, and in
+the deployment this code runs inside consensus on nodes whose runtime carries no cryptographic
+library at all. We record two obstacles that cost us time and that we expect to cost others the
+same.
+
+\subsection{Real endorsement certificates are not strictly DER}
+
+AMD encodes \texttt{critical: FALSE} explicitly where DER requires the default omitted. Python's
+\texttt{cryptography} refuses such a certificate outright with an \texttt{EncodedDefault} parse
+error, while \texttt{openssl} and Rust's \texttt{x509-parser} accept it. An implementer
+reaching for the obvious library will conclude the hardware is defective; it is not, and the
+certificate is the one the vendor issued. We moved endorsement-chain parsing to a lenient
+parser, shared by all verifiers.
+
+\subsection{A published ``root'' that is an intermediate}
+
+The certificate one vendor publishes as its endorsement root is cross-signed by a commercial
+certificate authority and is therefore an intermediate. Pinning it would silently relocate the
+trust decision to that authority, which is a different assertion from ``this vendor
+manufactured this chip''. We verify self-signedness before pinning, and omit that vendor rather
+than pin an intermediate.
+
+\subsection{Signature verification}
+
+PKCS\#1 v1.5 verification compares the entire re-encoded block~\cite{rfc8017}. An
+implementation that instead searches for the digest within the padding accepts trivial
+forgeries against small exponents---Bleichenbacher's 2006 result~\cite{finney,cve2006}, which
+production libraries have shipped more than once. We pin this as a test rather than a comment.
+
+\section{Evaluation}
+\label{sec:eval}
+
+We exercised the construction against a TPM~2.0 simulator, driving our own command encodings
+over the simulator's transport. The TCG endorsement template derives its $314$-byte public
+area; a restricted RSA-2048 signing key derives; our challenger's credential blob is accepted
+and opened by \texttt{ActivateCredential}, returning the sealed secret; an independent verifier
+re-derives the identical blob from the revealed pair; and a certify verifies, while a certify
+produced by a \emph{different} key in the same chip is refused under the enrolled key's public
+area. The full four-message enrolment reaches its proven state on values the chip actually
+produced. The enrolment has additionally been completed against a physical AMD firmware TPM.
+
+Simulation does not establish that a particular vendor's silicon behaves this way: a simulator
+accepts templates a firmware TPM may reject, and carries no endorsement certificate at all, so
+the one thing this path ultimately rests on---the vendor signature---cannot be exercised there.
+This is why we report the physical result separately and regard broader hardware coverage as
+required work rather than a formality.
+
+\section{Discussion}
+\label{sec:discussion}
 
 \subsection{Vendor authority in the trust path}
 
-Verification requires trusting that Google's and Microsoft's attestation roots sign only
-genuine hardware. This is a centralisation cost in a system whose premise is that no such
-authority should be necessary, and we do not think it can be argued away.
+Verification requires trusting that vendor attestation roots sign only genuine hardware. This
+is a centralisation cost in a system whose premise is that no such authority should be
+necessary, and we do not think it can be argued away.
 
 We observe only that every Sybil mechanism trusts something: Proof of Work trusts that no
 coalition controls a hash majority, an assumption weakening empirically; Proof of Stake trusts
 that concentrated holders do not collude. PoSEA trusts pinned vendor roots, verified offline,
 with no service able to revoke a participant at validation time. We regard this as a different
-trust assumption rather than a strictly worse one, and we note that reasonable readers
-disagree.
+trust assumption rather than a strictly worse one, and note that reasonable readers disagree.
 
 \subsection{Exclusion of modified devices}
 
-A device whose owner has unlocked its bootloader cannot attest and cannot mine in the open
-lane. This excludes, disproportionately, the users most committed to the principle that an
-owner should control their own hardware --- that is, the constituency most sympathetic to a
-permissionless chain. The deployment mitigates this only partially, by a bonded lane requiring
-no device at all, which is a capital gate and therefore not a substitute.
+A device whose owner has unlocked its bootloader cannot attest. This excludes,
+disproportionately, the users most committed to the principle that an owner should control
+their own hardware---the constituency most sympathetic to a permissionless chain. The
+deployment mitigates this only partially, by a bonded lane requiring no device, which is a
+capital gate and therefore not a substitute.
+
+\subsection{What the CA-free path costs}
+
+The human tap is gone. Enrolment and renewal are automatic, which is required for headless
+machines and is why a server can participate at all; it also means a farm's chips cost nothing
+to keep running. Identity \emph{count} is unchanged---one chip, one identity, however many
+attestation keys it enrols---but the security argument shifts. Where the WebAuthn path prices
+an identity at non-automatable human work on genuine hardware, this path prices it at the
+hardware alone.
+
+The choice of pinned endorsement roots therefore becomes the entire dial, and it reverses only
+in the widening direction: narrowing the set later strands everyone already enrolled under the
+wider one. A discrete TPM module costs roughly an order of magnitude less than the machine a
+CPU-vendor firmware TPM implies. We regard this as a policy choice a deployment must make
+deliberately and state, not a parameter to be set by pinning every root that can be found.
 
 \section{Open problem}
+\label{sec:open}
 
 The security of the construction reduces to an empirical quantity we cannot presently bound:
-the cost of extracting an attestation private key from a secure element, and whether that cost
-is specific to a hardware model or generalises across a chip family.
+the cost of extracting an attestation or endorsement private key from a secure element, and
+whether that cost is specific to a model or generalises across a chip family.
 
-If extraction is per-model and expensive, device scarcity holds and the adversary must
-purchase devices. If a single extraction generalises across a family, the adversary obtains an
-oracle for minting attestations and the construction degrades to precisely the identity farm it
-was built to prevent, with the additional disadvantage of having excluded honest modified
-devices in the meantime.
+The question is not open in the sense of untouched. TPM-FAIL~\cite{tpmfail} recovered ECDSA
+private keys from an Intel firmware TPM and an STMicroelectronics TPM by timing analysis;
+faulTPM~\cite{faultpm} extracted secrets from AMD firmware TPMs by voltage fault injection
+against the AMD Secure Processor; and Samsung's TrustZone keymaster was shown to permit
+attestation-relevant key compromise by design error~\cite{trustzone}. These results matter to
+us directly: one of them targets a vendor whose root we pin.
 
-We are not aware of a satisfying public treatment of this question at the granularity the
-design requires, and we regard establishing it as the most valuable next step. We would rather
-learn that the assumption fails than deploy on it silently.
+What they establish is that extraction is possible with \emph{physical access to the target
+machine}, which prices it per device and does not hand a remote adversary an oracle. What they
+do not establish---and what we need---is whether any of these generalises to a key that can be
+produced without possessing each chip. If extraction remains per-device and expensive, device
+scarcity holds and the adversary must buy hardware. If one extraction generalises across a
+family, the adversary obtains an oracle for minting attestations and the construction degrades
+to precisely the identity farm it was built to prevent, having excluded honest modified devices
+in the meantime.
+
+This bears more heavily on the CA-free path than on the WebAuthn one, because that path has no
+human tap to slow an oracle down. We are not aware of a satisfying public treatment at the
+granularity the design requires, and we regard establishing it as the most valuable next step.
+We would rather learn that the assumption fails than deploy on it silently.
+
+\section{Related work}
+\label{sec:related}
+
+\textbf{Sybil resistance.} Douceur~\cite{douceur} establishes that without a trusted identity
+authority, an adversary can present arbitrarily many identities absent a resource
+constraint---and PoSEA is best read as choosing which resource. Social-graph
+defences~\cite{sybilguard} bound identities by trust-graph structure, requiring a graph the
+system must already possess. Proof-of-personhood~\cite{pop,offline-pseudonyms} binds identities
+to physical gatherings; PoSEA binds them to physical objects, which scales without ceremony and
+proves correspondingly less.
+
+\textbf{Attestation without an issuer.} Direct Anonymous Attestation~\cite{daa} solves an
+adjacent problem---removing the privacy CA from TPM attestation---by group signatures with an
+issuer that sets up the group. It provides unlinkability, which we do not, and requires an
+issuer and its setup, which we do not. Our construction removes the issuing party entirely, at
+the cost of interaction and of a public ordering; it is applicable precisely because a ledger
+supplies that ordering for free, and would not be applicable without one.
+
+\textbf{Remote attestation generally.} SGX remote attestation~\cite{sgx} similarly terminates
+in a vendor service, and shares the failure mode we report: when the vendor service is
+unavailable to a party, the hardware's evidence becomes unusable regardless of its integrity.
+
+\textbf{Commit--reveal.} The commitment scheme is textbook~\cite{blum}; the contribution is not
+the scheme but Observation~\ref{obs:det}, that a TPM credential blob is deterministic in its
+inputs, which is what makes a commit--reveal sufficient here. Without that, a challenge
+could not be replayed and every verifier would need the challenger's word.
 
 \section{Conclusion}
 
 Per-identity admission rules cannot solve identity farming, because their cost is linear in
 identities and therefore neutral between an honest participant and an adversary. The
 alternative is to change what an identity is. Anchoring it in a physically distinct secure
-element makes identity scarce rather than expensive, at the price of admitting vendor
-attestation authorities into the trust path and excluding owners who have taken control of
-their hardware. Whether that price is worth paying depends on an empirical question about
-secure element extraction costs that remains, to our knowledge, open.
+element makes identity scarce rather than expensive.
+
+For the quarter of machines whose platform will not certify their hardware, we show that the
+certificate authority the standard construction requires can be removed entirely, because a TPM
+credential blob is deterministic in its inputs and a ledger can supply ordering where an issuer
+supplied a signature. The security of that construction rests on publication order and on one
+object attribute, both of which a verifier checks itself.
+
+The price is admitting vendor attestation authorities into the trust path, excluding owners who
+have taken control of their hardware, and---on the CA-free path---resting on hardware price
+rather than human effort. Whether that price is worth paying depends on an empirical question
+about secure-element extraction costs that remains, to our knowledge, open.
 
 \section*{Availability}
 
-The implementation, the attestation verifier, and the deployment history are public at
-\url{https://github.com/hclivess/nado}. The specification is at
-\texttt{doc/device-attestation.md}. The network is pre-mainnet; there is no token sale and
-nothing offered for purchase.
+A standalone reference implementation, the specification, the pinned roots and the tests are
+public at \url{https://github.com/hclivess/posea}; the enrolment of \S\ref{sec:noca} is
+\texttt{posea/tpm.py} and \texttt{posea/enrolment.py}, specified normatively in
+\texttt{SPEC.md}~\S9. The deployment it is extracted from is at
+\url{https://github.com/hclivess/nado}. The reverse-engineered platform key-attestation claim
+format is documented at \url{https://github.com/hclivess/windows-tpm-claim-format}. The network
+is pre-mainnet; there is no token sale and nothing offered for purchase.
+
+
+\begin{thebibliography}{99}
+
+\bibitem{nakamoto}
+S.~Nakamoto, ``Bitcoin: A peer-to-peer electronic cash system,'' 2008.
+
+\bibitem{douceur}
+J.~R. Douceur, ``The Sybil attack,'' in \emph{Proc. 1st Int. Workshop on Peer-to-Peer Systems
+(IPTPS)}, 2002, pp.~251--260.
+
+\bibitem{sybilguard}
+H.~Yu, M.~Kaminsky, P.~B. Gibbons, and A.~Flaxman, ``SybilGuard: Defending against Sybil
+attacks via social networks,'' in \emph{Proc. ACM SIGCOMM}, 2006.
+
+\bibitem{pop}
+M.~Borge, E.~Kokoris-Kogias, P.~Jovanovic, L.~Gasser, N.~Gailly, and B.~Ford,
+``Proof-of-personhood: Redemocratizing permissionless cryptocurrencies,'' in \emph{IEEE
+European Symp. on Security and Privacy Workshops (EuroS\&PW)}, 2017.
+
+\bibitem{offline-pseudonyms}
+B.~Ford and J.~Strauss, ``An offline foundation for online accountable pseudonyms,'' in
+\emph{Proc. 1st Workshop on Social Network Systems (SocialNets)}, 2008.
+
+\bibitem{casper}
+V.~Buterin and V.~Griffith, ``Casper the friendly finality gadget,'' arXiv:1710.09437, 2017.
+
+\bibitem{idena}
+Idena, ``Idena: Proof-of-person blockchain.'' [Online]. Available: \url{https://idena.io}
+
+\bibitem{webauthn}
+W3C, ``Web Authentication: An API for accessing public key credentials,'' W3C Recommendation.
+[Online]. Available: \url{https://www.w3.org/TR/webauthn-3/}
+
+\bibitem{androidkeyattest}
+Google, ``Verifying hardware-backed key pairs with key attestation,'' Android Developers.
+[Online]. Available:
+\url{https://developer.android.com/privacy-and-security/security-key-attestation}
+
+\bibitem{tpm2}
+Trusted Computing Group, ``Trusted Platform Module Library, Part 1: Architecture'' and
+``Part 3: Commands,'' Family 2.0, Level 00, Rev. 01.59, 2019.
+
+\bibitem{tcgek}
+Trusted Computing Group, ``TCG EK Credential Profile for TPM Family 2.0,'' Level 0, Version
+2.5.
+
+\bibitem{daa}
+E.~Brickell, J.~Camenisch, and L.~Chen, ``Direct anonymous attestation,'' in \emph{Proc. 11th
+ACM Conf. on Computer and Communications Security (CCS)}, 2004, pp.~132--145.
+
+\bibitem{sgx}
+V.~Costan and S.~Devadas, ``Intel SGX explained,'' IACR Cryptology ePrint Archive, Report
+2016/086, 2016.
+
+\bibitem{blum}
+M.~Blum, ``Coin flipping by telephone: A protocol for solving impossible problems,'' in
+\emph{Proc. CRYPTO}, 1981, pp.~11--15.
+
+\bibitem{rfc8017}
+K.~Moriarty, B.~Kaliski, J.~Jonsson, and A.~Rusch, ``PKCS \#1: RSA cryptography
+specifications version 2.2,'' RFC 8017, IETF, 2016.
+
+\bibitem{finney}
+H.~Finney, ``Bleichenbacher's RSA signature forgery based on implementation error,''
+openssl-dev mailing list, Aug. 2006.
+
+\bibitem{cve2006}
+``CVE-2006-4339: OpenSSL RSA signature forgery,'' 2006.
+
+\bibitem{tpmfail}
+D.~Moghimi, B.~Sunar, T.~Eisenbarth, and N.~Heninger, ``TPM-FAIL: TPM meets timing and lattice
+attacks,'' in \emph{Proc. 29th USENIX Security Symp.}, 2020.
+
+\bibitem{faultpm}
+H.~N. Jacob, C.~Werling, R.~Buhren, and J.-P. Seifert, ``faulTPM: Exposing AMD firmware TPMs,''
+arXiv:2304.14717, 2023.
+
+\bibitem{trustzone}
+A.~Shakevsky, E.~Ronen, and A.~Wool, ``Trust dies in darkness: Shedding light on Samsung's
+TrustZone keymaster design,'' in \emph{Proc. 31st USENIX Security Symp.}, 2022.
+
+\bibitem{claimformat}
+J.~Ku\v{c}era, ``Windows TPM key-attestation claim format,'' 2026. [Online]. Available:
+\url{https://github.com/hclivess/windows-tpm-claim-format}
+
+\end{thebibliography}
 
 \end{document}
