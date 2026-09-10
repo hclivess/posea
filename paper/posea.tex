@@ -53,9 +53,8 @@ across $k$ challengers drawn by a public beacon, replace the issuer. Nothing is 
 persists.
 
 We give the protocol, show its security reduces to publication order and to one TPM object attribute,
-and analyse what secure-element key extraction actually buys against it---one identity per chip
-physically held, however far the technique generalises, because certificates over uncertified keys
-still require the vendor. We validate against a TPM~2.0 simulator and a physical AMD firmware TPM, and
+and analyse what key extraction actually buys against it: one identity per chip physically held,
+however far the technique generalises, since certifying an uncertified key still needs the vendor. We validate against a TPM~2.0 simulator and a physical AMD firmware TPM, and
 report deployment as an admission mechanism on a public chain, where the residual assumption is
 vendor certificate authority integrity and nothing else.
 \end{abstract}
