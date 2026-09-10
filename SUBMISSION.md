@@ -41,6 +41,11 @@ one version works on every venue.
 
 ## Step 2: submit
 
+**A cover note is in `paper/cover-letter.md`.** It states the scope question directly rather than
+hoping a screener does not raise it, and it names the residual assumption the paper actually has. Keep
+the two in step: an earlier draft of that note named key extraction as the open problem, which the
+paper's own analysis contradicts.
+
 ### Primary venue: IACR Cryptology ePrint Archive
 
 **eprint.iacr.org**
