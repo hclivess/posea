@@ -1,6 +1,10 @@
 """PoSEA - Proof of Secure Element Attestation.
 
-Sybil resistance from hardware scarcity rather than hardware cost. See SPEC.md.
+Sybil resistance priced in devices rather than in per-identity rules. See SPEC.md.
+
+The floor is the price of one more device, and that is a real floor rather than a claim of scarcity:
+a farm CAN buy a thousand phones, and buying them is exactly the cost this imposes. What it removes
+is the free identity — the one a script mints — not the funded adversary.
 
 Two halves, for two situations.
 
@@ -34,6 +38,10 @@ from .tpm import (
     verify_credential_reveal,
 )
 from . import enrolment
+# PLATFORM LAYER. Import-safe on every OS: tpm_windows constructs nothing at import time, so a Linux
+# verifier can import the package without ctypes.WinDLL, and a Windows prover gets TBS plus the registry
+# EKCertStore reader that is the ONLY place an AMD fTPM's endorsement certificate was found (HARDWARE.md).
+from . import tpm_windows
 
 __all__ = [
     # platform attestation
@@ -52,4 +60,5 @@ __all__ = [
     "verify_certify",
     "verify_credential_reveal",
     "enrolment",
+    "tpm_windows",
 ]

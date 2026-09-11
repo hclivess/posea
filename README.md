@@ -1,10 +1,14 @@
 # PoSEA — Proof of Secure Element Attestation
 
-**Sybil resistance from hardware scarcity rather than hardware cost.**
+**Sybil resistance priced in devices rather than in per-identity rules.**
 
 A reference implementation and specification of PoSEA as a standalone primitive, extracted from
 its deployment in [NADO](https://github.com/hclivess/nado) so that it can be read, criticised and
 reused without adopting a blockchain.
+
+Hardware behaviour this depends on — where the endorsement certificate actually lives, what the chip
+refuses, and what each operation costs — is recorded with reproduction steps in
+**[HARDWARE.md](HARDWARE.md)**, measured on an AMD fTPM rather than taken from a specification.
 
 ---
 
