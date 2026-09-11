@@ -56,7 +56,10 @@ any verifier forever, and the possession proof needs only to be \emph{ordered}, 
 published messages, with a commit--reveal across $k$ beacon-drawn challengers, replace the authority.
 
 The residual assumption is vendor CA integrity, not key extraction: extraction yields one identity per
-chip physically held, since certifying a key the vendor never certified still needs the vendor.
+chip physically held, since certifying a key the vendor never certified still needs the vendor. We
+complete the enrolment on physical silicon and report that the collusion bound is weaker than it first
+appears---an adversary can \emph{resample} the draw, converting ``all $k$ must collude'' into a grinding
+attack whose expected cost we quantify.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -109,9 +112,19 @@ hardware proof exists and verifies offline against a pinned root. What is missin
   \item We report two implementation obstacles that will cost every implementer the same time: real
         vendor endorsement certificates are not strictly DER and the obvious library refuses them, and
         one vendor's published ``root'' is a cross-signed intermediate (\S\ref{sec:impl}).
-  \item We validate against a TPM~2.0 simulator and a physical AMD firmware TPM
-        (\S\ref{sec:eval}), and report deployment as an admission mechanism on a public chain
-        (\S\ref{sec:application}).
+  \item We show that the collusion bound is weaker than it appears: because an unanswered enrolment
+        must be abandonable for liveness, an adversary can \emph{resample} the challenger draw, turning
+        ``all $k$ must collude'' into a grinding attack. We quantify its expected cost against a
+        deployed weight distribution and state the tension it creates with liveness rather than
+        claiming a fix (\S\ref{sec:resample}).
+  \item We validate against a TPM~2.0 simulator and complete the enrolment on a physical AMD firmware
+        TPM on a live permissionless chain (\S\ref{sec:silicon}), reporting four measured results that
+        each contradicted an expectation---including that opening the credential through a
+        \texttt{PolicySecret} session costs zero dictionary-attack attempts, and that the endorsement
+        key refuses to act as a storage parent at all.
+  \item We report that a verifier's root set is never finished, and that an incomplete one is
+        indistinguishable from a forged chain at validation time while silently excluding honest
+        hardware (\S\ref{sec:eval}).
   \item We identify the residual assumption precisely (\S\ref{sec:open}): vendor certificate authority
         integrity, and nothing else.
 \end{itemize}
@@ -285,6 +298,59 @@ challengers, restoring the attack in full. The draw is without replacement, sinc
 twice halves the collusion forgery requires, and a short set is refused rather than accepted---an
 adversary able to shrink the challenger pool must not thereby reduce what forgery costs.
 
+\subsection{Resampling the draw}
+\label{sec:resample}
+
+The collusion requirement of \S\ref{sec:draw} is only half of the property. The other half is
+\emph{being drawn}, and an adversary can retry that.
+
+An enrolment that does not complete must eventually be abandonable, or a prover whose drawn challengers
+are unreachable is excluded permanently through no fault of its own---a liveness requirement, and in
+deployment a pressing one, since a challenger running older software answers nothing and cannot be
+distinguished from one that is merely slow. Abandonment means republication, and republication at a new
+height draws a new set. Nothing then prevents an adversary from republishing until the draw seats only
+its own nodes.
+
+Let the adversary hold a fraction $p$ of the draw weight and let $W$ be the enrolment window. Forgery per
+attempt has probability approximately $p^k$ for small $k$, and attempts are unbounded at one per $W$, so
+the expected time to a forged enrolment is about $W/p^k$ rather than the $\infty$ implied by
+``forgery requires all $k$ to collude''. Simulated against a deployed weight distribution of $13$
+candidates with $k=3$, weighted and without replacement:
+
+\begin{center}
+\begin{tabular}{rrr}
+\hline
+adversary weight & $\Pr[\text{forge}]$ per window & expected time \\
+\hline
+$25.5\%$ & $0.53\%$ & ${\approx}64$\,h \\
+$31.4\%$ & $1.54\%$ & ${\approx}22$\,h \\
+$36.4\%$ & $2.91\%$ & ${\approx}12$\,h \\
+$44.4\%$ & $6.59\%$ & ${\approx}5$\,h \\
+\hline
+\end{tabular}
+\end{center}
+
+At $W=180$ blocks ($\approx$20 minutes) an adversary holding roughly a third of the draw weight forges in
+half a day. The stake is rented rather than burned, so this is a cost of capital for the duration, not a
+loss. Each success yields one identity per endorsement certificate held; endorsement certificates are
+public and copyable, so an adversary with a harvested set converts grinding time into identities at that
+rate.
+
+Two things bound it in practice and neither is a defence. The figures are dominated by the small
+candidate set: the same adversary share against a few hundred challengers is a different problem, so this
+is a small-network weakness---which is precisely when it is cheapest to exploit and least likely to be
+noticed. And the adversary must run bonded infrastructure that participates honestly in consensus
+meanwhile.
+
+We record this as an unresolved tension rather than a solved problem, because the obvious fixes trade
+against the liveness requirement that created it. Fixing the set at first draw and re-drawing only the
+slots that did not answer preserves grinding resistance but needs a way to distinguish a silent
+challenger from a slow one. Charging an escalating fee per republication makes grinding pay
+super-linearly while one honest retry stays cheap, at the cost of pricing a remedy that exists for
+blameless provers. Raising $k$ or growing the candidate set moves the exponent and the base, and is the
+only direction that helps without a trade---but both are properties of a deployment's size rather than of
+the construction.
+
 \subsection{Freshness}
 
 An enrolment records that a key lives in a certified chip; it says nothing about when, and a proof from
@@ -439,10 +505,58 @@ verifies, while a certify produced by a \emph{different} key in the same chip is
 enrolled key's public area. The full four-message enrolment reaches its proven state on values the chip
 actually produced.
 
-The enrolment has additionally been completed against a physical AMD firmware TPM. Simulation alone
-would not establish that vendor silicon behaves this way: a simulator accepts templates a firmware TPM
-may reject and carries no endorsement certificate at all, so the vendor signature---the thing the
-construction ultimately rests on---cannot be exercised there.
+\subsection{On physical silicon}
+\label{sec:silicon}
+
+Simulation cannot establish that vendor silicon behaves this way: a simulator accepts templates a
+firmware TPM may reject and carries no endorsement certificate at all, so the vendor signature---the
+thing the construction ultimately rests on---cannot be exercised there. We therefore completed the
+enrolment end to end on an AMD firmware TPM (version $3.92.0.5$), on a live permissionless chain, with
+challengers drawn from its participants rather than from a harness.
+
+Four observations are worth reporting because each contradicted an expectation.
+
+\emph{The endorsement certificate was not where the profile puts it.} Both standard NV indices were
+empty, as were all four platform-crypto-provider properties. The certificate existed only in an
+operating-system store, as a $1{,}322$-byte structure of property records in which the certificate is one
+tagged field rather than the whole value. A reader following the TCG profile concludes the machine has no
+certificate and refuses a chip that is sound.
+
+\emph{The chain existed only over AIA.} Neither intermediate was present in any system certificate store;
+each had to be fetched from the authority-information-access extension of the certificate below it, and
+the leaf is published at no vendor URL---it exists on the machine or not at all. This asymmetry matters
+for platform coverage: where an operating-system store can recover a certificate the chip does not
+expose, a platform without one has no recourse.
+
+\emph{The endorsement key refused to act as a storage parent.} \texttt{TPM2\_Create} beneath it returns
+\texttt{TPM\_RC\_HANDLE}, rejected at handle validation. This forecloses on hardware a design that is
+independently unsound in theory: certifying an attestation key by \emph{descent} from the endorsement
+key, and shipping one self-contained blob, fails because \texttt{parentName} is a field inside a
+structure signed by the claimant---a software key reproduces it---and on this silicon the attempt does
+not even reach that objection.
+
+\emph{Opening the credential cost nothing.} \texttt{TPM2\_ActivateCredential} against an
+\texttt{adminWithPolicy} endorsement key, authorised through a \texttt{PolicySecret} session on the
+endorsement hierarchy, succeeded and consumed \emph{zero} dictionary-attack attempts: the lockout counter
+stood at $0$ of $32$ before and after four rounds opening three credentials each. This could not be known
+in advance and it bounds the retry economics: a counter that advanced per attempt would cap retries and
+make every failed enrolment expensive.
+
+\subsection{A root set is never finished}
+
+Deployment surfaced a failure mode the construction does not have but every instance of it does. A vendor
+ships more than one endorsement family: pinning the root that one product line chains to silently refuses
+every machine on the other. In our deployment a current laptop from a pinned vendor was rejected as
+uncertified because that vendor operates two endorsement roots and only one had been pinned; the chain was
+sound and the omission was ours.
+
+This is not a detail of operations. The verifier's answer to ``did a vendor certify this chip'' is exactly
+as complete as its root set, an incomplete set is indistinguishable from a forged chain at validation
+time, and the failure is silent and biased---it excludes honest hardware while costing an adversary
+nothing. Since determinism forbids fetching roots at validation time (\S\ref{sec:open}), the set is a
+consensus parameter, and enlarging it is a gated protocol change rather than a configuration edit. An
+implementation should therefore \emph{retain the chains it refuses}, so that a missing vendor is a filed
+artefact rather than an anecdote from whoever happened to be excluded.
 
 \section{Application: admission control}
 \label{sec:application}
