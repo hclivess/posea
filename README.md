@@ -6,6 +6,10 @@ A reference implementation and specification of PoSEA as a standalone primitive,
 its deployment in [NADO](https://github.com/hclivess/nado) so that it can be read, criticised and
 reused without adopting a blockchain.
 
+The **verifier** is Python (`posea/`); the **prover** — the half that runs on the machine being
+attested, drives the chip and assembles a chain that verifies — is Rust (`rust/`), because it has to run
+on whatever the owner already has, usually Windows with no toolchain and no administrator rights.
+
 Hardware behaviour this depends on — where the endorsement certificate actually lives, what the chip
 refuses, and what each operation costs — is recorded with reproduction steps in
 **[HARDWARE.md](HARDWARE.md)**, measured on an AMD fTPM rather than taken from a specification.

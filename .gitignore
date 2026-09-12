@@ -7,3 +7,4 @@ paper/*.out
 # paper/posea.pdf is TRACKED on purpose: a reader should not need a LaTeX install to read the
 # paper, and a submission PDF that nobody can reproduce from the source in the same commit is a
 # document with no provenance. Rebuild with `cd paper && pdflatex posea.tex && pdflatex posea.tex`.
+rust/target/
