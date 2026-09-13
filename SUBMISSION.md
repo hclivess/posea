@@ -6,7 +6,7 @@ Two steps: compile a PDF, then submit it. Neither needs a LaTeX install.
 
 ## Step 1: get a PDF
 
-The paper is **IEEEtran conference format**, two-column, and compiles to **7 pages** on US Letter.
+The paper is **IEEEtran conference format**, two-column, and compiles to **8 pages** on US Letter.
 No bibtex run is needed: the bibliography is a `thebibliography` block in the source.
 
 **Locally** (verified 2026-09-10 on TeX Live 2023):
@@ -16,7 +16,7 @@ cd paper && pdflatex posea.tex && pdflatex posea.tex
 ```
 
 Twice matters — the theorem, section and citation cross-references resolve on the second pass. A
-clean build reports 7 pages with no overfull boxes and no undefined references; if you see either,
+clean build reports 8 pages with no overfull boxes and no undefined references; if you see either,
 something in the source changed.
 
 Debian/Ubuntu needs `texlive-latex-base texlive-latex-recommended texlive-fonts-recommended
@@ -34,17 +34,28 @@ author block currently says *Jan Kučera, NADO, admin@bismuth.cz* — change it 
 different affiliation.
 
 `paper/abstract.txt` is the abstract as plain text, generated from the source, for pasting into
-submission forms. It is **1,884 characters**, deliberately under arXiv's 1,920-character limit, so
+submission forms. It is **1,900 characters**, deliberately under the ePrint and arXiv 1,920-character form limit, so
 one version works on every venue.
 
 ---
 
 ## Step 2: submit
 
-**A cover note is in `paper/cover-letter.md`.** It states the scope question directly rather than
-hoping a screener does not raise it, and it names the residual assumption the paper actually has. Keep
-the two in step: an earlier draft of that note named key extraction as the open problem, which the
-paper's own analysis contradicts.
+**A cover note is in `paper/cover-letter.md`.** It leads with the construction and says what changed
+since the returned version. Keep it in step with the paper: an earlier draft named key extraction as the
+open problem, which the paper's own analysis contradicts, and the draft before this one opened by
+describing what the paper is *not*, which is the wrong first sentence to put in front of a screener.
+
+### What the first submission taught (2026-09-13)
+
+Submission xxxx/111651 was returned with the archive's three general criteria quoted (clear and
+self-contained; new and interesting; proofs or convincing arguments) and no specific reason. The
+metadata title had a typo ("Attesttation"). Read against those criteria the fault was presentation:
+the abstract led with deployment numbers and reached the contribution in its third paragraph, the
+introduction had eight contribution bullets, the threat model used *beacon* and *draw weight* without
+defining them, and the window $W$ was introduced as "the enrolment window" with no definition. All of
+that is fixed in the current source; no claim was added or removed. Resubmit as a new paper, retype the
+title from the line below, and paste `paper/abstract.txt` unchanged.
 
 ### Primary venue: IACR Cryptology ePrint Archive
 
@@ -53,8 +64,8 @@ paper's own analysis contradicts.
 1. Register for an account (free). Registration is separate from submission.
 2. Submit a paper. You will be asked for:
 
-   - **Title:** Proof of Secure Element Attestation: Sybil Resistance from Hardware Scarcity
-     Rather Than Cost
+   - **Title:** Proof of Secure Element Attestation Without a Certificate Authority
+     (retype it; the first submission's metadata carried "Attesttation")
    - **Author:** Jan Kučera (UTF-8, with the caron. The form states that names with accents
      must be UTF-8, not TeX codes or HTML entities)
    - **Email:** admin@bismuth.cz (publicly visible, permanently)
@@ -96,14 +107,10 @@ PDF before submitting rather than after.
 
 3. Submissions are screened by editors before appearing. Expect a few days, not minutes.
 
-**Set expectations honestly.** ePrint's scope is cryptology. This paper does not propose or
-analyse a cryptographic primitive; it argues a systems result (per-identity rules cannot resist
-identity farming) and gives a protocol built from existing primitives — the contribution is the
-observation that a TPM credential blob is deterministic in its inputs, which lets ledger ordering
-replace an issuer's signature. That is closer to ePrint's scope than the first version of this
-paper was, since it is a protocol result with a security argument rather than only a deployment
-report, but a screener could still judge it out of scope. That would not be a negative judgement
-on the work.
+**Set expectations honestly.** ePrint's scope is cryptology. The contribution is a protocol with a
+security argument: a TPM credential blob is deterministic in its inputs, so ledger ordering replaces
+an issuer's signature. The Sybil argument is the application, not the paper. A screener could still
+judge it out of scope; that would not be a negative judgement on the work.
 
 Once posted, an ePrint entry is permanent. It can be revised or withdrawn, but not deleted.
 

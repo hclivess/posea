@@ -34,32 +34,28 @@ September 2026}}
 \maketitle
 
 \begin{abstract}
-Permissionless systems that reward participants rather than capital face an adversary ordinary
-countermeasures cannot price: the identity farm. Every per-identity admission rule---registration work,
-waiting periods, address caps---costs an adversary holding $n$ identities exactly what it costs an
-honest participant holding one, per identity; only the adversary amortises setup. We report a deployment
-where this failed totally: some $1{,}000$ of $1{,}191$ mining identities belonged to two or three
-operators running browser farms, capturing $42\%$ of emission.
+Remote attestation of a secure element has always needed an issuer. A TPM's endorsement key is
+vendor-certified but cannot sign, so the key that signs must be certified by a privacy CA able to assert
+any chip's identity. We remove the issuer. \texttt{TPM2\_MakeCredential}'s credential blob is a
+deterministic function of its (seed, object name, secret) triple, so a possession challenge issued once
+can be recomputed offline by every verifier afterwards; the possession proof need only be
+\emph{ordered}, not signed. Four published messages, with a commit--reveal across $k$ challengers drawn
+by a public beacon, replace the certificate authority. No signing key and no long-lived secret exist
+anywhere in the construction; the verifier checks the endorsement chain against pinned vendor roots
+with no online service. We complete the enrolment on physical silicon.
 
-Proof of Secure Element Attestation (PoSEA) admits a participant on a hardware attestation verified
-offline against pinned vendor roots, one identity per secure element. The obvious claim---that this
-makes identities \emph{scarce} rather than expensive---is false: $n$ devices cost $n$ times as much, so
-a device farm is the ASIC of this mechanism. What changes is the constant, and in the measured case that
-was the whole problem: the attack was browser processes whose thousandth identity cost nothing.
-
-Such attestation has always needed an issuer. A TPM's endorsement key is vendor-certified but cannot
-sign, so the signing key must be certified by a privacy CA able to assert any chip's identity---and of
-$664$ attempts, $26.8\%$ came from machines whose healthy TPM~2.0 that authority has no registration
-for. On Linux no such service exists. We remove the issuer: \texttt{TPM2\_MakeCredential}'s blob is
-deterministic in its (seed, name, secret) triple, so a challenge issued once is recomputable offline by
-any verifier forever, and the possession proof needs only to be \emph{ordered}, not signed. Four
-published messages, with a commit--reveal across $k$ beacon-drawn challengers, replace the authority.
+This gives permissionless systems a fourth admission resource beside work, stake and space: attested
+silicon, one identity per secure element. Any rule priced per identity costs an adversary holding $n$
+identities exactly what it costs an honest participant holding one, so raising the price
+never disadvantages the farm; in one deployment $1{,}000$ of $1{,}191$ mining identities
+belonged to two or three operators running browser farms and took $42\%$ of emission. Attested silicon
+does not make identities scarce, only expensive---a device farm is this mechanism's ASIC---but it moves
+the marginal cost of an identity from nothing to the price of a chip. The privacy CA the standard route depends on was unavailable for
+$26.8\%$ of $664$ healthy TPM~2.0 machines and has never existed on Linux.
 
 The residual assumption is vendor CA integrity, not key extraction: extraction yields one identity per
-chip physically held, since certifying a key the vendor never certified still needs the vendor. We
-complete the enrolment on physical silicon and report that the collusion bound is weaker than it first
-appears---an adversary can \emph{resample} the draw, converting ``all $k$ must collude'' into a grinding
-attack whose expected cost we quantify.
+chip physically held. We show the collusion bound is weaker than it first appears---an adversary can
+\emph{resample} the challenger draw---and quantify the resulting grinding cost.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -67,6 +63,17 @@ Trusted platform module, remote attestation, privacy CA, commit--reveal, Sybil r
 \end{IEEEkeywords}
 
 \section{Introduction}
+
+This paper makes one protocol observation and builds an enrolment on it. The observation is that a
+TPM~2.0 credential blob is a deterministic function of its inputs, so the interactive proof that an
+attestation key resides in a certified chip---which has always been converted into a durable artifact by
+an issuer's signature---can instead be replayed offline by every verifier, forever, from values that are
+public after the fact. The enrolment built on it needs no certificate authority and no long-lived key:
+four published messages whose security comes from the \emph{order} in which they were published. The
+result admits a participant on attested silicon, one identity per secure element, verified against
+pinned vendor roots with no online service. For a permissionless system that is a fourth admission
+resource beside work, stake and space, and \S\ref{sec:application} argues why the first three cannot
+price the adversary it was built against.
 
 Hardware attestation answers a question no software can: \emph{is this key inside a genuine secure
 element?} A TPM~2.0 answers it awkwardly. The chip carries an \emph{endorsement key} that its silicon
@@ -98,35 +105,28 @@ hardware proof exists and verifies offline against a pinned root. What is missin
 \subsection{Contributions}
 
 \begin{itemize}
-  \item We observe that \texttt{TPM2\_MakeCredential}'s credential blob is deterministic in its
-        inputs (Observation~\ref{obs:det}), which converts an inherently interactive possession proof
-        into an artifact any verifier can re-derive offline and forever (\S\ref{sec:construction}).
-  \item Building on it, we give a TPM enrolment protocol with \textbf{no certificate authority and no
-        long-lived key of any kind}: four published messages whose security comes from their
-        \emph{order} rather than from any signature. It needs only an agreed total order on published
-        messages---a ledger, an append-only log, or any ordering service.
-  \item We show the security reduces to publication order and to the \texttt{restricted} object
-        attribute (\S\ref{sec:security}), and that secure-element key extraction---usually treated as
-        the assumption such schemes live by---yields one identity per chip \emph{physically held}
-        however far the technique generalises (\S\ref{sec:extraction}).
-  \item We report two implementation obstacles that will cost every implementer the same time: real
-        vendor endorsement certificates are not strictly DER and the obvious library refuses them, and
-        one vendor's published ``root'' is a cross-signed intermediate (\S\ref{sec:impl}).
-  \item We show that the collusion bound is weaker than it appears: because an unanswered enrolment
-        must be abandonable for liveness, an adversary can \emph{resample} the challenger draw, turning
-        ``all $k$ must collude'' into a grinding attack. We quantify its expected cost against a
-        deployed weight distribution and state the tension it creates with liveness rather than
-        claiming a fix (\S\ref{sec:resample}).
-  \item We validate against a TPM~2.0 simulator and complete the enrolment on a physical AMD firmware
-        TPM on a live permissionless chain (\S\ref{sec:silicon}), reporting four measured results that
-        each contradicted an expectation---including that opening the credential through a
-        \texttt{PolicySecret} session costs zero dictionary-attack attempts, and that the endorsement
-        key refuses to act as a storage parent at all.
-  \item We report that a verifier's root set is never finished, and that an incomplete one is
-        indistinguishable from a forged chain at validation time while silently excluding honest
-        hardware (\S\ref{sec:eval}).
-  \item We identify the residual assumption precisely (\S\ref{sec:open}): vendor certificate authority
-        integrity, and nothing else.
+  \item \textbf{A CA-free enrolment.} We observe that \texttt{TPM2\_MakeCredential}'s credential blob
+        is deterministic in its inputs (Observation~\ref{obs:det}), which turns an inherently
+        interactive possession proof into an artifact any verifier can re-derive offline and forever,
+        and build on it an enrolment with \textbf{no certificate authority and no long-lived key of any
+        kind}: four published messages whose security comes from their \emph{order}
+        (\S\ref{sec:construction}). It needs only an agreed total order on published messages---a
+        ledger, an append-only log, or any ordering service.
+  \item \textbf{What it rests on.} The security reduces to publication order and to the
+        \texttt{restricted} object attribute (\S\ref{sec:security}). Secure-element key
+        extraction---usually treated as the assumption such schemes live by---yields one identity per
+        chip \emph{physically held} however far the technique generalises (\S\ref{sec:extraction}); the
+        residual assumption is vendor certificate-authority integrity, and nothing else
+        (\S\ref{sec:open}).
+  \item \textbf{A weaker bound than it looks.} Because an unanswered enrolment must be abandonable for
+        liveness, an adversary can \emph{resample} the challenger draw, turning ``all $k$ must collude''
+        into a grinding attack. We quantify its expected cost against a deployed weight distribution and
+        state the tension with liveness rather than claiming a fix (\S\ref{sec:resample}).
+  \item \textbf{Silicon, not simulation.} We complete the enrolment on a physical AMD firmware TPM on a
+        live permissionless chain (\S\ref{sec:silicon}), reporting four measured results that each
+        contradicted an expectation, two implementation obstacles every implementer will meet
+        (\S\ref{sec:impl}), and that a verifier's root set is never finished---an incomplete one is
+        indistinguishable from a forged chain at validation time (\S\ref{sec:eval}).
 \end{itemize}
 
 \section{Background}
@@ -181,6 +181,14 @@ verifiers agree on, where ``strictly later'' is well defined and positions are n
 blockchain provides this; so does an append-only transparency log or a BFT broadcast service. We assume
 nothing about its confidentiality---every message below is public---and nothing about honest
 participation beyond the challenger condition stated in \S\ref{sec:draw}.
+
+Two terms are used throughout. A \textbf{beacon} is a value the ordering service fixes at each position
+and that no single participant can choose---here the hash of the block in which a message lands, known
+only once that block exists. \textbf{Draw weight} is the quantity by which challengers are sampled from
+the population of enrolled participants: each holder's weight is its share of the total, and a draw
+seats a participant with probability proportional to that share. The construction needs only that the
+beacon is unpredictable at publication time and that weight is not free to acquire; the deployment
+uses stake, but any resource with those two properties serves.
 
 We assume verifier clocks do not agree, and evaluate all certificate validity at an ordering-agreed
 anchor time.
@@ -311,7 +319,7 @@ distinguished from one that is merely slow. Abandonment means republication, and
 height draws a new set. Nothing then prevents an adversary from republishing until the draw seats only
 its own nodes.
 
-Let the adversary hold a fraction $p$ of the draw weight and let $W$ be the enrolment window. Forgery per
+Let the adversary hold a fraction $p$ of the draw weight and let $W$ be the enrolment window: the number of positions an enrolment may remain open, awaiting its challengers, before it is abandoned and republished. Forgery per
 attempt has probability approximately $p^k$ for small $k$, and attempts are unbounded at one per $W$, so
 the expected time to a forged enrolment is about $W/p^k$ rather than the $\infty$ implied by
 ``forgery requires all $k$ to collude''. Simulated against a deployed weight distribution of $13$
