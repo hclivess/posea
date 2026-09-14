@@ -56,6 +56,10 @@ because a scope answer settles the question and a criterion answer is actionable
 third time without an answer: the archive's rule that follow-up versions of withdrawn work are not
 accepted is not the same rule, but a third identical decline costs goodwill for nothing.
 
+**Published 2026-09-14 on Zenodo: doi:10.5281/zenodo.22749219** (concept DOI 10.5281/zenodo.22749218,
+which always resolves to the latest version). A revised PDF is uploaded as a *new version* of that record,
+never a new record, so citations keep resolving. Linked from this README, the NADO README and nadochain.com.
+
 Venues that do not gate on scope, in the order to use them:
 
 1. **Zenodo** (zenodo.org, CERN). Log in with GitHub or ORCID, upload the PDF, choose "Publication /

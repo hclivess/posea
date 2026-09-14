@@ -2,6 +2,12 @@
 
 **Sybil resistance priced in devices rather than in per-identity rules.**
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22749219.svg)](https://doi.org/10.5281/zenodo.22749219)
+
+The paper, *Proof of Secure Element Attestation Without a Certificate Authority*, is published at
+**[doi:10.5281/zenodo.22749219](https://doi.org/10.5281/zenodo.22749219)** (CC BY 4.0); the source is
+`paper/posea.tex` and the PDF in the same commit is the one deposited.
+
 A reference implementation and specification of PoSEA as a standalone primitive, extracted from
 its deployment in [NADO](https://github.com/hclivess/nado) so that it can be read, criticised and
 reused without adopting a blockchain.
@@ -237,7 +243,7 @@ shows the assumption fails.
 ## Repository contents
 
 ```
-paper/posea.tex      the write-up, submission-formatted
+paper/posea.tex      the paper (doi:10.5281/zenodo.22749219), IEEEtran source; posea.pdf beside it
 SUBMISSION.md        how to compile and where to submit it
 SPEC.md              normative specification (§9 is the CA-free enrolment)
 posea/_parse.py      attestation parsing and the per-device binding handle
