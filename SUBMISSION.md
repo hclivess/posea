@@ -46,6 +46,30 @@ since the returned version. Keep it in step with the paper: an earlier draft nam
 open problem, which the paper's own analysis contradicts, and the draft before this one opened by
 describing what the paper is *not*, which is the wrong first sentence to put in front of a screener.
 
+### Second decline (2026-09-14) and where the paper goes now
+
+The revised paper, resubmitted as xxxx/111764 with the corrected title, the contribution-first abstract
+and the defined terms, was declined with the same template. Two declines with the same three criteria
+quoted and nothing specific make the most likely reading *scope*, which no rewrite addresses.
+`paper/eprint-editor-email.md` asks for the decisive criterion in one sentence; it is worth sending
+because a scope answer settles the question and a criterion answer is actionable. Do not resubmit a
+third time without an answer: the archive's rule that follow-up versions of withdrawn work are not
+accepted is not the same rule, but a third identical decline costs goodwill for nothing.
+
+Venues that do not gate on scope, in the order to use them:
+
+1. **Zenodo** (zenodo.org, CERN). Log in with GitHub or ORCID, upload the PDF, choose "Publication /
+   Preprint", CC BY. A DOI is issued immediately and is permanent; every later version gets its own DOI
+   under one concept DOI. No screening. This is the citable identifier, today.
+2. **arXiv cs.CR**. Needs an endorsement for a first submission in the category; the endorsement request
+   form names an existing arXiv author in cs.CR, and anyone who has published there can endorse in a
+   minute. Moderation is on form and category, not on whether the work is cryptology. Cite the Zenodo DOI
+   in the comments field so the two records point at each other.
+3. **TechRxiv** (techrxiv.org, IEEE). Light moderation, DOI, and the paper is already in IEEEtran. Use it
+   if arXiv endorsement stalls.
+
+Whichever lands first goes in the README, the NADO README and the Bitcointalk thread.
+
 ### What the first submission taught (2026-09-13)
 
 Submission xxxx/111651 was returned with the archive's three general criteria quoted (clear and
